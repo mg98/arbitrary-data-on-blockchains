@@ -4,8 +4,8 @@ This project originated as a study project at *Humboldt University of Berlin*. T
 
 ## Requirements
 
-✅ Python 3 and PIP
-✅ GCP account with enabled BigQuery API
+- ✅ Python 3 and PIP
+- ✅ GCP account with enabled BigQuery API
 
 ## Getting Started
 
