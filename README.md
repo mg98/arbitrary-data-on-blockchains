@@ -21,10 +21,15 @@ pip3 install -r requirements.txt
 
 ### 🕵️‍♂️ Run Analyzer on the Blockchain
 
-Running this script will scan the Ethereum blockchain via BigQuery for arbitrary content and store the results in the SQLite database (`results.db`). The database gets cleared beforehand.
+Running this script will scan the Ethereum blockchain via BigQuery for arbitrary content and store the results in the SQLite database (`results.db`). The analyzer has two modes and will either scan for files of popular type or embedded UTF-8 text strings.
 
 ```
-usage: analyze.py [-h] [--limit LIMIT]
+usage: analyze.py [-h] [--limit LIMIT] {files,text}
+
+Analyze the Ethereum blockchain for arbitrary content.
+
+positional arguments:
+  {files,text}   Type of content to look for.
 
 optional arguments:
   -h, --help     show this help message and exit
@@ -33,7 +38,7 @@ optional arguments:
 
 ### 📖 View Results
 
-This project also includes a script to fire up a web server that reads the results from the database and expose them in HTML that you can access at http://localhost:8080.
+This project also includes a script to fire up a web server that reads the results from the database and expose them in HTML that you can access at http://localhost:8080/files and http://localhost:8080/text, respectively.
 
 > :warning: **Warning:** Results may include very explicit content or even content that is considered illegal in your country.
 

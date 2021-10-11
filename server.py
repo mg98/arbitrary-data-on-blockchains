@@ -165,7 +165,11 @@ class WebServer(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
 	s = HTTPServer((HOST, PORT), WebServer)
-	print("Server started http://%s:%s" % (HOST, PORT))
+	print(f"""Server started! 🎉
+
+View results for
+- Files Analysis at http://{HOST}:{PORT}/files
+- Text Analysis at http://{HOST}:{PORT}/text""")
 
 	try:
 		s.serve_forever()
