@@ -79,32 +79,39 @@ class WebServer(BaseHTTPRequestHandler):
 
 		cursor = conn.execute("SELECT * FROM files_results LIMIT 20 OFFSET {}".format(20 * (page-1)))
 		for row in cursor:
-			self.write("""
+			hash_val, mime_type, method, data = row[0], row[1], row[2], row[3]
+
+			if mime_type.startswith("application/") and mime_type != "application/pdf":
+				data_displayed = f"""<a href="data:{mime_type};base64,{data}">Download</a>"""
+			else:
+				data_displayed = f"""<embed src="data:{mime_type};charset=utf-8;base64,{data}" type="{mime_type}">"""
+
+			self.write(f"""
 				<tr>
-					<td><a href="https://etherscan.io/tx/{hash}" target="_blank">{hash}</a></td>
+					<td><a href="https://etherscan.io/tx/{hash_val}" target="_blank">{hash_val}</a></td>
 					<td>{mime_type}</td>
 					<td>{method}</td>
-					<td><embed src="data:{mime_type};charset=utf-8;base64,{data}" type="{mime_type}"></td>
+					<td>{data_displayed}</td>
 				</tr>
-				""".format(
-					hash=row[0],
-					mime_type=row[1],
-					method=row[2],
-					data=row[3]
-				))
+				""")
 
 		self.write("</table>")
 		self.write(nav)
 
 	def render_text_analysis(self, page):
+		# regex patterns
 		REGEX_PATTERN_URL = '(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})'
 		REGEX_PATTERN_EMAIL = """(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])"""
 		REGEX_PATTERN_HEX = '0x[A-Fa-f0-9]*($| )'
 		REGEX_PATTERN_PGP = '-----{*}*.+-----+{*}*.+-----{*}*.+-----'
 		REGEX_PATTERN_HTML = '<[^>]+>.*<\/[^>]+>'
 
-		def write_row(label, value):
+		def write_row(label: str, value):
+			"""Write HTML for table row with two columns: label and value."""
 			self.write("<tr><td>{}</td><td>{}</td></tr>".format(label, value))
+
+		def count_rows_matching_regex(cursor: sqlite3.Cursor, pattern: str):
+			return len(list(filter(lambda row: re.compile(pattern).match(row[0].decode("utf-8")), cursor)))
 
 		self.write("<strong>General</strong>")
 		self.write("<table><tr><th>Attribute</th><th>Amount</th></tr>")
@@ -118,13 +125,11 @@ class WebServer(BaseHTTPRequestHandler):
 
 		# count urls
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%http%' OR data LIKE '%www.%'")
-		total_urls = len(list(filter(lambda row: re.compile(REGEX_PATTERN_URL).match(row[0].decode("utf-8")), cursor)))
-		write_row("Contain URL", total_urls)
+		write_row("Contain URL", count_rows_matching_regex(cursor, REGEX_PATTERN_URL))
 
 		# count email addresses
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%@%'")
-		total_email = len(list(filter(lambda row: re.compile(REGEX_PATTERN_EMAIL).match(row[0].decode("utf-8")), cursor)))
-		write_row("Contain Email Addresses", total_email)
+		write_row("Contain Email Addresses", count_rows_matching_regex(cursor, REGEX_PATTERN_EMAIL))
 
 		# count jsons
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%{%}%'")
@@ -139,26 +144,22 @@ class WebServer(BaseHTTPRequestHandler):
 
 		# count hex
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%0x%'")
-		total_hex = len(list(filter(lambda row: re.compile(REGEX_PATTERN_HEX).match(row[0].decode("utf-8")), cursor)))
-		write_row("Contain HEX", total_hex)
+		write_row("Contain HEX", count_rows_matching_regex(cursor, REGEX_PATTERN_HEX))
 
 		# count pgp
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%-----%'")
-		total_pgp = len(list(filter(lambda row: re.compile(REGEX_PATTERN_PGP).match(row[0].decode("utf-8")), cursor)))
-		write_row("Contain PGP", total_pgp)
+		write_row("Contain PGP", count_rows_matching_regex(cursor, REGEX_PATTERN_PGP))
 
 		# count html
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%</%'")
-		total_html = len(list(filter(lambda row: re.compile(REGEX_PATTERN_HTML).match(row[0].decode("utf-8")), cursor)))
-		write_row("Contain HTML/XML", total_html)
+		write_row("Contain HTML/XML", count_rows_matching_regex(cursor, REGEX_PATTERN_HTML))
 
 		self.write("</table>")
 
 		self.write("<strong>Most Frequently</strong>")
 		self.write("<table><tr><th>Text</th><th>Amount</th></tr>")
 		cursor = conn.execute("SELECT data, COUNT(data) as count FROM text_results GROUP BY data ORDER BY count DESC LIMIT 15")
-		for row in cursor:
-			write_row(row[0].decode("utf-8"), row[1])
+		for row in cursor: write_row(row[0].decode("utf-8"), row[1])
 
 		self.write("</table>")
 
@@ -169,7 +170,8 @@ if __name__ == "__main__":
 
 View results for
 - Files Analysis at http://{HOST}:{PORT}/files
-- Text Analysis at http://{HOST}:{PORT}/text""")
+- Text Analysis at http://{HOST}:{PORT}/text
+""")
 
 	try:
 		s.serve_forever()

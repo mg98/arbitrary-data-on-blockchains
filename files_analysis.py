@@ -14,15 +14,14 @@ FILE_SIGNATURES = {
     "video/mov": ["6674797071742020"],
     "video/wmv": ["a6d900aa0062ce6c"],
     "video/avi": ["52494646"],
-    "archive/zip": ["504B0304"],
-    "archive/rar": ["526172211A0700", "526172211A070100"],
-    "archive/7zip": ["377ABCAF271C"],
-    "archive/tar": ["7573746172003030", "7573746172202000"],
-    "archive/targz": ["1f8b"]
+    "application/zip": ["504b0304"],
+	"application/rar": ["526172211a0700", "526172211a070100"],
+	"application/tar": ["7573746172003030", "7573746172202000"],
+	"application/x-7z-compressed": ["377ABCAF271C"]
 }
 
 def expensive_type(mime_type: str) -> bool:
-    return mime_type.startswith("audio") or mime_type.startswith("video") or mime_type.startswith("archive")
+    return any(len(sig) <= 6 for sig in FILE_SIGNATURES[mime_type])
 
 signatures = [v for values in FILE_SIGNATURES.values() for v in values]
 signatures_for_embedded = [v for mime_type in FILE_SIGNATURES.keys() for v in FILE_SIGNATURES[mime_type] if not expensive_type(mime_type)]
