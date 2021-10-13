@@ -1,0 +1,14 @@
+{
+    "image/png": ["89504e470d0a1a0a"],
+    "image/jpeg": ["ffd8ff"],
+    "image/gif": ["474946383761", "474946383961"],
+    "image/webp": ["52494646"],
+    "audio/mp3": ["494433"],
+    "audio/wav": ["52494646"],
+    "video/mp4": ["667479"],
+    "video/mov": ["6674797071742020"],
+    "video/wmv": ["a6d900aa0062ce6c"],
+    "video/avi": ["52494646"],
+    "application/pdf": ["255044462d"],
+    "application/zip": ["504b0304"]
+}

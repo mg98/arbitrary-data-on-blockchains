@@ -105,6 +105,7 @@ class WebServer(BaseHTTPRequestHandler):
 		REGEX_PATTERN_HEX = '0x[A-Fa-f0-9]*($| )'
 		REGEX_PATTERN_PGP = '-----{*}*.+-----+{*}*.+-----{*}*.+-----'
 		REGEX_PATTERN_HTML = '<[^>]+>.*<\/[^>]+>'
+		REGEX_PATTERN_JSON = '([{\[].*?[}\]])'
 
 		def write_row(label: str, value):
 			"""Write HTML for table row with two columns: label and value."""
@@ -129,17 +130,20 @@ class WebServer(BaseHTTPRequestHandler):
 
 		# count email addresses
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%@%'")
-		write_row("Contain Email Addresses", count_rows_matching_regex(cursor, REGEX_PATTERN_EMAIL))
+		write_row("Contain Email Address", count_rows_matching_regex(cursor, REGEX_PATTERN_EMAIL))
 
 		# count jsons
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%{%}%'")
 		total_jsons = 0
 		for row in cursor:
-			try:
-				json.loads(row[0])
-				total_jsons += 1
-			except:
-				pass
+			for candidate in re.compile(REGEX_PATTERN_JSON).findall(row[0].decode("utf-8")):
+				if candidate == '{}': continue
+				try:
+					json.loads(row[0])
+					total_jsons += 1
+					break
+				except:
+					pass
 		write_row("Contain JSON", total_jsons)
 
 		# count hex
@@ -158,7 +162,7 @@ class WebServer(BaseHTTPRequestHandler):
 
 		self.write("<strong>Most Frequently</strong>")
 		self.write("<table><tr><th>Text</th><th>Amount</th></tr>")
-		cursor = conn.execute("SELECT data, COUNT(data) as count FROM text_results GROUP BY data ORDER BY count DESC LIMIT 15")
+		cursor = conn.execute("SELECT data, COUNT(data) as count FROM text_results GROUP BY data HAVING count >= 1000 ORDER BY count DESC")
 		for row in cursor: write_row(row[0].decode("utf-8"), row[1])
 
 		self.write("</table>")
