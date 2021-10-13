@@ -24,7 +24,7 @@ pip3 install -r requirements.txt
 Running this script will scan the Ethereum blockchain via BigQuery for arbitrary content and store the results in the SQLite database (`results.db`). The analyzer has two modes and will either scan for files of popular type or embedded UTF-8 text strings.
 
 ```
-usage: analyze.py [-h] [--limit LIMIT] {files,text}
+usage: analyze.py [-h] [--limit LIMIT] [--mimes MIMES] {files,text}
 
 Analyze the Ethereum blockchain for arbitrary content.
 
@@ -34,6 +34,7 @@ positional arguments:
 optional arguments:
   -h, --help     show this help message and exit
   --limit LIMIT  Limit the results processed by the BigQuery SQL query. If not set, proceeds to query the entire blockchain.
+  --mimes MIMES  Comma separated list of mime types to be considered (default: '*').
 ```
 
 ### 📖 View Results
