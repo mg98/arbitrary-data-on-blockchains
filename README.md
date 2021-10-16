@@ -48,3 +48,9 @@ Use the following command to run the server:
 ```
 python3 server.py
 ```
+
+The following script will use the data to plot some graphs, e.g. to display the frequency of the transactions over time. This can be done by running the following command:
+
+```
+python3 plots.py
+```

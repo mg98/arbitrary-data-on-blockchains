@@ -34,6 +34,12 @@ head = """
 			max-height: 100px;
 		}
 	</style>
+	<script>
+		function markAsInvalid(el, hashVal) {
+			fetch("/files/delete?hash=" + hashVal);
+			el.parentElement.parentElement.remove();
+		}
+	</script>
 </head>
 <body>
 """
@@ -53,12 +59,17 @@ class WebServer(BaseHTTPRequestHandler):
 
 		params = urlparse(self.path)
 		mode = params.path[1:]
-		page = int(params.query[2:]) if params.query[:2] == 'p=' else 1
 
 		if mode == "files":
+			page = int(params.query[2:]) if params.query[:2] == 'p=' else 1
 			self.render_files_analysis(page)
 		elif mode == "text":
-			self.render_text_analysis(page)
+			self.render_text_analysis()
+		elif mode == "files/delete":
+			hash = params.query[5:]
+			cursor = conn.cursor()
+			cursor.execute("UPDATE files_results SET deleted = 1 WHERE hash = ?", (hash,))
+			conn.commit()
 
 		self.write(tail)
 
@@ -75,11 +86,11 @@ class WebServer(BaseHTTPRequestHandler):
 			""".format(page-1, page+1)
 
 		self.write(nav)
-		self.write("<table><tr><th>Hash</th><th>Type</th><th>Method</th><th>Content</th></tr>")
+		self.write("<table><tr><th>Hash</th><th>Type</th><th>Method</th><th>To Contract</th><th>Content</th><th>Block Timestamp</th><th>Action</th></tr>")
 
-		cursor = conn.execute("SELECT * FROM files_results LIMIT 20 OFFSET {}".format(20 * (page-1)))
+		cursor = conn.execute("SELECT hash, mime_type, method, to_contract, data, block_timestamp FROM files_results WHERE deleted = 0 LIMIT 20 OFFSET {}".format(20 * (page-1)))
 		for row in cursor:
-			hash_val, mime_type, method, data = row[0], row[1], row[2], row[3]
+			hash_val, mime_type, method, to_contract, data, block_timestamp = row[0], row[1], row[2], row[3], row[4], row[5]
 
 			if mime_type.startswith("application/") and mime_type != "application/pdf":
 				data_displayed = f"""<a href="data:{mime_type};base64,{data}">Download</a>"""
@@ -91,14 +102,17 @@ class WebServer(BaseHTTPRequestHandler):
 					<td><a href="https://etherscan.io/tx/{hash_val}" target="_blank">{hash_val}</a></td>
 					<td>{mime_type}</td>
 					<td>{method}</td>
+					<td>{'Yes' if to_contract else 'No'}</td>
 					<td>{data_displayed}</td>
+					<td>{block_timestamp}</td>
+					<td><button onclick="markAsInvalid(this, '{hash_val}')">Mark as invalid</button></td>
 				</tr>
 				""")
 
 		self.write("</table>")
 		self.write(nav)
 
-	def render_text_analysis(self, page):
+	def render_text_analysis(self):
 		# regex patterns
 		REGEX_PATTERN_URL = '(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})'
 		REGEX_PATTERN_EMAIL = """(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])"""
@@ -107,9 +121,11 @@ class WebServer(BaseHTTPRequestHandler):
 		REGEX_PATTERN_HTML = '<[^>]+>.*<\/[^>]+>'
 		REGEX_PATTERN_JSON = '([{\[].*?[}\]])'
 
-		def write_row(label: str, value):
-			"""Write HTML for table row with two columns: label and value."""
-			self.write("<tr><td>{}</td><td>{}</td></tr>".format(label, value))
+		def write_row(*vals):
+			"""Write HTML for a table row."""
+			self.write("<tr>")
+			for val in vals: self.write(f"<td>{val}</td>")
+			self.write("</tr>")
 
 		def count_rows_matching_regex(cursor: sqlite3.Cursor, pattern: str):
 			return len(list(filter(lambda row: re.compile(pattern).match(row[0].decode("utf-8")), cursor)))
@@ -160,11 +176,25 @@ class WebServer(BaseHTTPRequestHandler):
 
 		self.write("</table>")
 
+		# most valuable
+		self.write("<strong>Most valuable transactions</strong>")
+		self.write("<table><tr><th>Hash</th><th>Text</th><th>Value</th><th>Date</th></tr>")
+		cursor = conn.execute("SELECT hash, data, gwei_value, block_timestamp FROM text_results ORDER BY gwei_value DESC LIMIT 10")
+		for row in cursor:
+			hash = row[0]
+			write_row(
+				f'<a href="https://etherscan.io/tx/{hash}" target="_blank">{hash}</a>',
+				row[1].decode("utf-8"),
+				str(row[2] / 1000000000) + " ETH",
+				row[3]
+			)
+		self.write("</table>")
+
+		# ranking
 		self.write("<strong>Most Frequently</strong>")
 		self.write("<table><tr><th>Text</th><th>Amount</th></tr>")
 		cursor = conn.execute("SELECT data, COUNT(data) as count FROM text_results GROUP BY data HAVING count >= 1000 ORDER BY count DESC")
 		for row in cursor: write_row(row[0].decode("utf-8"), row[1])
-
 		self.write("</table>")
 
 

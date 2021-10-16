@@ -9,7 +9,7 @@ parser.add_argument('--limit', help='Limit the results processed by the BigQuery
 parser.add_argument('--mimes', help='Comma separated list of mime types to be considered (default: \'*\').', default='*')
 args = parser.parse_args()
 
-if args.mode != 'files' and args.mimes:
+if args.mode != 'files' and args.mimes != '*':
     parser.error('--mimes can only be set for file analysis.')
 
 

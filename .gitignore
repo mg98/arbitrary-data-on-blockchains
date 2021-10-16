@@ -1,5 +1,6 @@
 files/
 .env
 *.db
+*.db-journal
 .DS_Store
 __pycache__
