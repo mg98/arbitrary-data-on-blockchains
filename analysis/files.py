@@ -91,7 +91,7 @@ class FilesAnalysis:
 		print("Writing results to db...")
 
 		def insert(hash: str, mime_type: str, method: str, block_timestamp: str, to_contract: bool, data: str):
-			cursor.execute("""INSERT INTO files_results (
+			cursor.execute("""INSERT INTO files_results2 (
 				hash, mime_type, method, block_timestamp, to_contract, data
 			) VALUES (?, ?, ?, ?, ?, ?)""", (hash, mime_type, method, block_timestamp, to_contract, data))
 			self.conn.commit()
