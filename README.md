@@ -4,7 +4,7 @@ This project originated as a study project at *Humboldt University of Berlin*. T
 
 ## Requirements
 
-- ✅ Python 3 and PIP
+- ✅ Python 3.9+ and PIP
 - ✅ GCP account with enabled BigQuery API
 
 ## Getting Started
@@ -21,20 +21,21 @@ pip3 install -r requirements.txt
 
 ### 🕵️‍♂️ Run Analyzer on the Blockchain
 
-Running this script will scan the Ethereum blockchain via BigQuery for arbitrary content and store the results in the SQLite database (`results.db`). The analyzer has two modes and will either scan for files of popular type or embedded UTF-8 text strings.
+Running this script will scan the Ethereum blockchain via BigQuery for arbitrary content and store the results in the SQLite database (`results.db`). The analyzer has two modes and will accordingly either scan for files of popular type or embedded UTF-8 text strings.
 
 ```
-usage: analyze.py [-h] [--limit LIMIT] [--mimes MIMES] {files,text}
+usage: analyze.py [-h] [--limit LIMIT] [--reset | --no-reset] [--mimes MIMES] {files,text}
 
 Analyze the Ethereum blockchain for arbitrary content.
 
 positional arguments:
-  {files,text}   Type of content to look for.
+  {files,text}         Type of content to look for.
 
 optional arguments:
-  -h, --help     show this help message and exit
-  --limit LIMIT  Limit the results processed by the BigQuery SQL query. If not set, proceeds to query the entire blockchain.
-  --mimes MIMES  Comma separated list of mime types to be considered (default: '*').
+  -h, --help           show this help message and exit
+  --limit LIMIT        Limit the results processed by the BigQuery SQL query. If not set, proceeds to query the entire blockchain.
+  --reset, --no-reset	 Clear out current results from the database. (default: False)
+  --mimes MIMES        Comma separated list of mime types to be considered (default: '*').
 ```
 
 ### 📖 View Results

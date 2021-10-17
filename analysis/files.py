@@ -7,15 +7,24 @@ from fnmatch import fnmatch
 class FilesAnalysis:
 	"""Analysis of transaction input data that contain popular file types."""
 
-	def __init__(self, limit: int = 0, mime_types: list[str] = ['*']):
+	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
 		"""
 		Initialize files analysis.
 
 		:param limit Limit results processed by BigQuery.
+		:param reset Flag about resetting the database before starting the analysis.
 		:param mime_types List of considerable mime types for this analysis. Asterix-sign supported.
 		"""
 		self.limit = limit
+		self.reset = reset
 		self.file_signatures = FilesAnalysis.get_file_signatures(mime_types)
+
+	def __enter__(self):
+		self.conn = sqlite3.connect("results.db")
+		return self
+
+	def __exit__(self, type, val, tb):
+		self.conn.close()
 
 	@staticmethod
 	def get_file_signatures(mimes: list[str]) -> dict[str,list[str]]:
@@ -55,31 +64,37 @@ class FilesAnalysis:
 		sigs_for_injected = [v for mime_type in self.file_signatures.keys() for v in self.file_signatures[mime_type] if not FilesAnalysis.is_expensive_type(mime_type)]
 		sql_likes = list(map(lambda fs: "`input` LIKE '0x{}%'".format(fs), sigs)) + list(map(lambda fs: "`input` LIKE '0x%{}'".format(fs), sigs_for_injected))
 
+		# create or reset table
+		cursor = self.conn.cursor()
+		if self.reset: cursor.execute("DROP TABLE IF EXISTS files_results2")
+		cursor.execute("CREATE TABLE IF NOT EXISTS files_results2 (hash TEXT, mime_type TEXT, method TEXT, to_contract BOOLEAN, data TEXT, block_timestamp DATETIME, deleted BOOLEAN DEFAULT 0)")
+		self.conn.commit()
+
+		# build where clause
+		sql_where = ' OR '.join(sql_likes)
+		if not self.reset:
+			last_record = self.conn.execute("SELECT block_timestamp FROM files_results2 ORDER BY block_timestamp DESC LIMIT 1").fetchone()
+			if last_record: sql_where = f't.`block_timestamp` > \'{last_record[0]}\' AND ({sql_where})'
+
 		query = """
 			SELECT `hash`, `input`, t.`block_timestamp`,
 			CASE WHEN c.`address` IS NOT NULL THEN true ELSE false END AS to_contract
 			FROM `bigquery-public-data.crypto_ethereum.transactions` t
 			LEFT OUTER JOIN `bigquery-public-data.crypto_ethereum.contracts` c
 			ON c.`address` = `to_address`
-		WHERE {} {}
-		""".format(' OR '.join(sql_likes), 'LIMIT {}'.format(self.limit) if self.limit is not None else '')
+			WHERE {} {}
+		""".format(sql_where, 'LIMIT {}'.format(self.limit) if self.limit is not None else '')
 
 		client = bigquery.Client()
 		query_job = client.query(query)
 
 		print("Writing results to db...")
 
-		conn = sqlite3.connect("results.db")
-		cursor = conn.cursor()
-		cursor.execute("DROP TABLE IF EXISTS files_results")
-		cursor.execute("CREATE TABLE files_results(hash TEXT, mime_type TEXT, method TEXT, to_contract BOOLEAN, data TEXT, block_timestamp DATETIME, deleted BOOLEAN DEFAULT 0)")
-		conn.commit()
-
 		def insert(hash: str, mime_type: str, method: str, block_timestamp: str, to_contract: bool, data: str):
-			cursor.execute("""INSERT INTO files_results (
+			cursor.execute("""INSERT INTO files_results2 (
 				hash, mime_type, method, block_timestamp, to_contract, data
 			) VALUES (?, ?, ?, ?, ?, ?)""", (hash, mime_type, method, block_timestamp, to_contract, data))
-			conn.commit()
+			self.conn.commit()
 
 		try:
 			for tx in query_job:
@@ -107,5 +122,3 @@ class FilesAnalysis:
 		except Exception as e:
 			print("Something went really wrong!")
 			print(e)
-		finally:
-			conn.close()

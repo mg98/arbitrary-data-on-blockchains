@@ -13,26 +13,39 @@ class TextAnalysis:
 	"""
 	min_chars = 1
 
-	def __init__(self, limit: int = 0):
+	def __init__(self, limit: int = 0, reset: bool = False):
 		"""
 		Initialize files analysis.
 
 		:param limit Limit results processed by BigQuery.
 		"""
 		self.limit = limit
+		self.reset = reset
+
+	def __enter__(self):
+		self.conn = sqlite3.connect("results.db")
+		return self
+
+	def __exit__(self, type, val, tb):
+		self.conn.close()
 
 	def run(self):
 		"""Runs the query on BigQuery and persists result to the database."""
+
+		if not self.reset:
+			last_record = self.conn.execute("SELECT block_timestamp FROM text_results ORDER BY block_timestamp DESC LIMIT 1").fetchone()
+			if last_record: ts_clause = f'AND t.`block_timestamp` > \'{last_record[0]}\''
 
 		query = """
 			SELECT `hash`, `input`, ROUND(IEEE_DIVIDE(`value`, 1000000000)) AS gwei_value, t.`block_timestamp`, CASE WHEN c.`address` IS NOT NULL THEN true ELSE false END AS to_contract
 			FROM `bigquery-public-data.crypto_ethereum.transactions` t
 			LEFT OUTER JOIN `bigquery-public-data.crypto_ethereum.contracts` c
 			ON c.`address` = `to_address`
-			WHERE LENGTH(`input`) >= {} AND REGEXP_CONTAINS(`input`, r'^0x{}*$') {}
+			WHERE LENGTH(`input`) >= {} AND REGEXP_CONTAINS(`input`, r'^0x{}*$') {} {}
 		""".format(
 			2 + TextAnalysis.min_chars * 2,
 			REGEX_UTF8,
+			ts_clause or '',
 			'LIMIT {}'.format(self.limit) if self.limit is not None else ''
 		)
 
@@ -41,15 +54,14 @@ class TextAnalysis:
 
 		print("Writing results to db...")
 
-		conn = sqlite3.connect("results.db")
-		cursor = conn.cursor()
-		cursor.execute("DROP TABLE IF EXISTS text_results")
-		cursor.execute("CREATE TABLE text_results (hash TEXT, data TEXT, gwei_value UNSIGNED BIG INT, block_timestamp DATETIME, to_contract BOOLEAN)")
-		conn.commit()
+		cursor = self.conn.cursor()
+		if self.reset: cursor.execute("DROP TABLE IF EXISTS text_results")
+		cursor.execute("CREATE TABLE IF NOT EXISTS text_results (hash TEXT, data TEXT, gwei_value UNSIGNED BIG INT, block_timestamp DATETIME, to_contract BOOLEAN)")
+		self.conn.commit()
 
 		def insert(hash: str, data: str, gwei_value: int, block_timestamp: str, to_contract: bool):
 			cursor.execute("INSERT INTO text_results VALUES (?, ?, ?, ?, ?)", (hash, data, gwei_value, block_timestamp, to_contract))
-			conn.commit()
+			self.conn.commit()
 
 		try:
 			for tx in query_job:
@@ -66,5 +78,3 @@ class TextAnalysis:
 		except Exception as e:
 			print("Something went really wrong!")
 			print(e)
-		finally:
-			conn.close()
