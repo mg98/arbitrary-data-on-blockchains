@@ -135,10 +135,12 @@ class WebServer(BaseHTTPRequestHandler):
 
 		total = conn.execute("SELECT COUNT(*) FROM text_results").fetchone()[0]
 		total_texts = conn.execute("SELECT COUNT(*) FROM text_results WHERE data LIKE '% %'").fetchone()[0]
+		to_contract = conn.execute("SELECT COUNT(*) FROM text_results WHERE to_contract = 1").fetchone()[0]
 
 		write_row("Total", total)
 		write_row("Tokens", total-total_texts)
 		write_row("Texts", total_texts)
+		write_row("Sent to Contracts", to_contract)
 
 		# count urls
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%http%' OR data LIKE '%www.%'")

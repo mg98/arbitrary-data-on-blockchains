@@ -10,5 +10,6 @@
     "video/wmv": ["a6d900aa0062ce6c"],
     "video/avi": ["52494646"],
     "application/pdf": ["255044462d"],
-    "application/zip": ["504b0304"]
+    "application/zip": ["504b0304"],
+	"application/x-7z-compressed": ["377abcaf271c"]
 }

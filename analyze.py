@@ -12,6 +12,5 @@ args = parser.parse_args()
 if args.mode != 'files' and args.mimes != '*':
     parser.error('--mimes can only be set for file analysis.')
 
-
 if args.mode == 'files': FilesAnalysis(limit=args.limit, mime_types=args.mimes.split(',')).run()
 elif args.mode == 'text': TextAnalysis(limit=args.limit).run()
