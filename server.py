@@ -90,12 +90,12 @@ class WebServer(BaseHTTPRequestHandler):
 
 		cursor = conn.execute("SELECT hash, mime_type, method, to_contract, data, block_timestamp FROM files_results WHERE deleted = 0 LIMIT 20 OFFSET {}".format(20 * (page-1)))
 		for row in cursor:
-			hash_val, mime_type, method, to_contract, data, block_timestamp = row[0], row[1], row[2], row[3], row[4], row[5]
+			hash_val, mime_type, method, to_contract, data, block_timestamp = str(row[0]), str(row[1]), str(row[2]), bool(row[3]), str(row[4]), row[5]
+			file_suffix = mime_type.rsplit('/', 1)[-1]
 
-			if mime_type.startswith("application/") and mime_type != "application/pdf":
-				data_displayed = f"""<a href="data:{mime_type};base64,{data}">Download</a>"""
-			else:
-				data_displayed = f"""<embed src="data:{mime_type};charset=utf-8;base64,{data}" type="{mime_type}">"""
+			data_displayed = f"""<a href="data:{mime_type};base64,{data}" download="{hash_val}.{file_suffix}">Download</a>"""
+			if not mime_type.startswith("application/") or mime_type == "application/pdf":
+				data_displayed = f"""<embed src="data:{mime_type};charset=utf-8;base64,{data}" type="{mime_type}"><br>""" + data_displayed
 
 			self.write(f"""
 				<tr>

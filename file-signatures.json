@@ -11,5 +11,5 @@
     "video/avi": ["52494646"],
     "application/pdf": ["255044462d"],
     "application/zip": ["504b0304"],
-	"application/x-7z-compressed": ["377abcaf271c"]
+	"application/7z": ["377abcaf271c"]
 }

@@ -7,16 +7,18 @@ from fnmatch import fnmatch
 class FilesAnalysis:
 	"""Analysis of transaction input data that contain popular file types."""
 
-	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
+	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*'], skip_injected_jpegs: bool = True):
 		"""
 		Initialize files analysis.
 
 		:param limit Limit results processed by BigQuery.
 		:param reset Flag about resetting the database before starting the analysis.
 		:param mime_types List of considerable mime types for this analysis. Asterix-sign supported.
+		:param skip_injected_jpegs Do not search for injected jpegs.
 		"""
 		self.limit = limit
 		self.reset = reset
+		self.skip_injected_jpegs = skip_injected_jpegs
 		self.file_signatures = FilesAnalysis.get_file_signatures(mime_types)
 
 	def __enter__(self):
@@ -52,17 +54,16 @@ class FilesAnalysis:
 		"""Converts hex to base64."""
 		return codecs.encode(codecs.decode(hex_value, 'hex'), 'base64').decode()
 
-	@staticmethod
-	def is_expensive_type(mime_type: str) -> bool:
+	def is_expensive_type(self, mime_type: str) -> bool:
 		"""Check if mime type is considered expensive for injected content analysis (too many false positives)."""
-		return not mime_type.startswith("image") or mime_type == "image/jpeg"
+		return not mime_type.startswith("image") or (mime_type == "image/jpeg" and self.skip_injected_jpegs)
 
 	def run(self):
 		"""Runs the query on BigQuery and persists results to the database."""
 
 		sigs = [v for values in self.file_signatures.values() for v in values]
-		sigs_for_injected = [v for mime_type in self.file_signatures.keys() for v in self.file_signatures[mime_type] if not FilesAnalysis.is_expensive_type(mime_type)]
-		sql_likes = list(map(lambda fs: "`input` LIKE '0x{}%'".format(fs), sigs)) + list(map(lambda fs: "`input` LIKE '0x%{}'".format(fs), sigs_for_injected))
+		sigs_for_injected = [v for mime_type in self.file_signatures.keys() for v in self.file_signatures[mime_type] if not self.is_expensive_type(mime_type)]
+		sql_likes = list(map(lambda fs: "`input` LIKE '0x{}%'".format(fs), sigs)) + list(map(lambda fs: "`input` LIKE '0x%{}%'".format(fs), sigs_for_injected))
 
 		# create or reset table
 		cursor = self.conn.cursor()
@@ -91,7 +92,7 @@ class FilesAnalysis:
 		print("Writing results to db...")
 
 		def insert(hash: str, mime_type: str, method: str, block_timestamp: str, to_contract: bool, data: str):
-			cursor.execute("""INSERT INTO files_results2 (
+			cursor.execute("""INSERT INTO files_results (
 				hash, mime_type, method, block_timestamp, to_contract, data
 			) VALUES (?, ?, ?, ?, ?, ?)""", (hash, mime_type, method, block_timestamp, to_contract, data))
 			self.conn.commit()
@@ -104,7 +105,7 @@ class FilesAnalysis:
 				for sig in self.file_signatures[mime_type]:
 					start = tx["input"].find(sig)
 					# consider only embedded or not expensive injected files
-					if start != -1 and (start == 2 or not FilesAnalysis.is_expensive_type(mime_type)):
+					if start != -1 and (start == 2 or not self.is_expensive_type(mime_type)):
 						hex_value = tx["input"][start:]
 						break
 
@@ -119,6 +120,7 @@ class FilesAnalysis:
 					)
 				else:
 					print("Failed to decode input.")
+			print("Success!")
 		except Exception as e:
 			print("Something went really wrong!")
 			print(e)

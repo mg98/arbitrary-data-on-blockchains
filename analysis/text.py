@@ -74,7 +74,7 @@ class TextAnalysis:
 						tx['block_timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
 						tx['to_contract']
 					)
-			print("Done.")
+			print("Success!")
 		except Exception as e:
 			print("Something went really wrong!")
 			print(e)
