@@ -176,6 +176,10 @@ class WebServer(BaseHTTPRequestHandler):
 		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%</%'")
 		write_row("Contain HTML/XML", count_rows_matching_regex(cursor, REGEX_PATTERN_HTML))
 
+		# count base64
+		total_data_urls = conn.execute("SELECT COUNT(*) FROM text_results WHERE data LIKE 'data:%;base64,%'").fetchone()[0]
+		write_row("Contain Data URLs", total_data_urls)
+
 		self.write("</table>")
 
 		# most valuable
