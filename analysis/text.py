@@ -41,7 +41,7 @@ class TextAnalysis:
 			FROM `bigquery-public-data.crypto_ethereum.transactions` t
 			LEFT OUTER JOIN `bigquery-public-data.crypto_ethereum.contracts` c
 			ON c.`address` = `to_address`
-			WHERE LENGTH(`input`) >= {} AND REGEXP_CONTAINS(`input`, r'^0x{}*$') {} {}
+			WHERE REGEXP_CONTAINS(`input`, r'^0x{}.*$') {} {}
 		""".format(
 			2 + TextAnalysis.min_chars * 2,
 			REGEX_UTF8,
