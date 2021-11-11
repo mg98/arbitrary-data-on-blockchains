@@ -1,6 +1,6 @@
 # An Analysis of Arbitrary Content on the Ethereum Blockchain
 
-This project originated as a study project at *Humboldt University of Berlin*. The goal was to analyze the amount of classification of arbitrary content (such as images or audio) that has been persisted on the Ethereum blockchain.
+This project originated as a study project at *Humboldt-University of Berlin*. The goal was to analyze the amount of arbitrary content (such as images or audio) that has been persisted on the Ethereum blockchain.
 
 ## Requirements
 
