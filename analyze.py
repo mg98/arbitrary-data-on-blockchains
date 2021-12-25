@@ -1,6 +1,5 @@
 import argparse
-from analysis.files import FilesAnalysis
-from analysis.text import TextAnalysis
+import analysis
 
 parser = argparse.ArgumentParser(description='Analyze the Ethereum blockchain for arbitrary content.')
 
@@ -27,13 +26,16 @@ if args.mode != 'files' and args.mimes != '*':
 
 
 if args.mode == 'files':
-	analyzer = FilesAnalysis(
+	analyzer = analysis.BtcFilesAnalysis(
 		limit=args.limit,
 		reset=args.reset,
 		mime_types=args.mimes.split(','),
 		skip_injected_jpegs=args.skip_injected_jpegs
 	)
 elif args.mode == 'text':
-	analyzer = TextAnalysis(limit=args.limit, reset=args.reset).run()
+	analyzer = analysis.BtcTextAnalysis(
+		limit=args.limit, 
+		reset=args.reset
+	)
 
 with analyzer as a: a.run()
