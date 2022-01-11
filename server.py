@@ -11,7 +11,7 @@ head = """
 <!DOCTYPE html>
 <html>
 <head>
-	<title>Ethereum Data Analysis</title>
+	<title>Blockchain Data Analysis</title>
 	<link rel="stylesheet" href="style.css">
 	<style type="text/css">
 		html, body {
@@ -58,18 +58,24 @@ class WebServer(BaseHTTPRequestHandler):
 		self.write(head)
 
 		params = urlparse(self.path)
-		mode = params.path[1:]
+		mode = params.path[1:].split('/')[0]
 
-		if mode == "files":
-			page = int(params.query[2:]) if params.query[:2] == 'p=' else 1
-			self.render_files_analysis(page)
-		elif mode == "text":
-			self.render_text_analysis()
-		elif mode == "files/delete":
-			hash = params.query[5:]
-			cursor = conn.cursor()
-			cursor.execute("UPDATE files_results SET deleted = 1 WHERE hash = ?", (hash,))
-			conn.commit()
+		if mode in ['files', 'text', 'files/delete']:
+			chain = params.path[1:].split('/')[1]
+			if chain not in ['btc', 'eth']:
+				self.send_error(400, "Selected Chain Not Accepted")
+				return
+
+			if mode == "files":
+				page = int(params.query[2:]) if params.query[:2] == 'p=' else 1
+				self.render_files_analysis(page, chain)
+			elif mode == "text":
+				self.render_text_analysis(chain)
+			elif mode == "files/delete":
+				hash = params.query[5:]
+				cursor = conn.cursor()
+				cursor.execute("UPDATE files_results SET deleted = 1 WHERE chain = ? hash = ?", (chain, hash,))
+				conn.commit()
 
 		self.write(tail)
 
@@ -77,7 +83,7 @@ class WebServer(BaseHTTPRequestHandler):
 		"""Convenience function to write to the HTML output."""
 		self.wfile.write(bytes(content, "utf-8"))
 
-	def render_files_analysis(self, page):
+	def render_files_analysis(self, page, chain):
 		nav = """
 			<div class="nav">
 				<a href="?p={}">Prev</a>
@@ -86,11 +92,18 @@ class WebServer(BaseHTTPRequestHandler):
 			""".format(page-1, page+1)
 
 		self.write(nav)
-		self.write("<table><tr><th>Hash</th><th>Type</th><th>Method</th><th>To Contract</th><th>Content</th><th>Block Timestamp</th><th>Action</th></tr>")
+		self.write("<table><tr><th>Chain</th><th>Hash</th><th>Type</th><th>Method</th><th>To Contract</th><th>Content</th><th>Block Timestamp</th><th>Action</th></tr>")
 
-		cursor = conn.execute("SELECT hash, mime_type, method, to_contract, data, block_timestamp FROM files_results WHERE deleted = 0 LIMIT 20 OFFSET {}".format(20 * (page-1)))
+		cursor = conn.execute("""
+				SELECT hash, chain, mime_type, method, to_contract, data, block_timestamp 
+				FROM files_results 
+				WHERE deleted = 0 
+					AND chain = '{}' 
+				LIMIT 20 
+				OFFSET {}
+			""".format(chain, 20 * (page-1)))
 		for row in cursor:
-			hash_val, mime_type, method, to_contract, data, block_timestamp = str(row[0]), str(row[1]), str(row[2]), bool(row[3]), str(row[4]), row[5]
+			hash_val, chain, mime_type, method, to_contract, data, block_timestamp = str(row[0]), str(row[1]), str(row[2]), str(row[3]), bool(row[4]), str(row[5]), row[6]
 			file_suffix = mime_type.rsplit('/', 1)[-1]
 
 			data_displayed = f"""<a href="data:{mime_type};base64,{data}" download="{hash_val}.{file_suffix}">Download</a>"""
@@ -99,7 +112,8 @@ class WebServer(BaseHTTPRequestHandler):
 
 			self.write(f"""
 				<tr>
-					<td><a href="https://etherscan.io/tx/{hash_val}" target="_blank">{hash_val}</a></td>
+					<td>{chain.upper()}</td>
+					<td><a href="{'https://etherscan.io' if chain == 'eth' else 'https://blockchain.info'}/tx/{hash_val}" target="_blank">{hash_val}</a></td>
 					<td>{mime_type}</td>
 					<td>{method}</td>
 					<td>{'Yes' if to_contract else 'No'}</td>
@@ -112,7 +126,7 @@ class WebServer(BaseHTTPRequestHandler):
 		self.write("</table>")
 		self.write(nav)
 
-	def render_text_analysis(self):
+	def render_text_analysis(self, chain: str):
 		# regex patterns
 		REGEX_PATTERN_URL = '(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})'
 		REGEX_PATTERN_EMAIL = """(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])"""
@@ -133,9 +147,9 @@ class WebServer(BaseHTTPRequestHandler):
 		self.write("<strong>General</strong>")
 		self.write("<table><tr><th>Attribute</th><th>Amount</th></tr>")
 
-		total = conn.execute("SELECT COUNT(*) FROM text_results").fetchone()[0]
-		total_texts = conn.execute("SELECT COUNT(*) FROM text_results WHERE data LIKE '% %'").fetchone()[0]
-		to_contract = conn.execute("SELECT COUNT(*) FROM text_results WHERE to_contract = 1").fetchone()[0]
+		total = conn.execute("SELECT COUNT(*) FROM text_results WHERE chain = '{}'".format(chain)).fetchone()[0]
+		total_texts = conn.execute("SELECT COUNT(*) FROM text_results WHERE chain = '{}' AND data LIKE '% %'".format(chain)).fetchone()[0]
+		to_contract = conn.execute("SELECT COUNT(*) FROM text_results WHERE chain = '{}' AND to_contract = 1".format(chain)).fetchone()[0]
 
 		write_row("Total", total)
 		write_row("Tokens", total-total_texts)
@@ -143,15 +157,15 @@ class WebServer(BaseHTTPRequestHandler):
 		write_row("Sent to Contracts", to_contract)
 
 		# count urls
-		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%http%' OR data LIKE '%www.%'")
+		cursor = conn.execute("SELECT data FROM text_results WHERE chain = '{}' AND data LIKE '%http%' OR data LIKE '%www.%'".format(chain))
 		write_row("Contain URL", count_rows_matching_regex(cursor, REGEX_PATTERN_URL))
 
 		# count email addresses
-		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%@%'")
+		cursor = conn.execute("SELECT data FROM text_results WHERE chain = '{}' AND data LIKE '%@%'".format(chain))
 		write_row("Contain Email Address", count_rows_matching_regex(cursor, REGEX_PATTERN_EMAIL))
 
 		# count jsons
-		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%{%}%'")
+		cursor = conn.execute("SELECT data FROM text_results WHERE chain = '{}' AND data LIKE '{}'".format(chain, '%{%}%'))
 		total_jsons = 0
 		for row in cursor:
 			for candidate in re.compile(REGEX_PATTERN_JSON).findall(row[0].decode("utf-8")):
@@ -165,19 +179,19 @@ class WebServer(BaseHTTPRequestHandler):
 		write_row("Contain JSON", total_jsons)
 
 		# count hex
-		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%0x%'")
+		cursor = conn.execute("SELECT data FROM text_results WHERE chain = '{}' AND data LIKE '%0x%'".format(chain))
 		write_row("Contain HEX", count_rows_matching_regex(cursor, REGEX_PATTERN_HEX))
 
 		# count pgp
-		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%-----%'")
+		cursor = conn.execute("SELECT data FROM text_results WHERE chain = '{}' AND data LIKE '%-----%'".format(chain))
 		write_row("Contain PGP", count_rows_matching_regex(cursor, REGEX_PATTERN_PGP))
 
 		# count html
-		cursor = conn.execute("SELECT data FROM text_results WHERE data LIKE '%</%'")
+		cursor = conn.execute("SELECT data FROM text_results WHERE chain = '{}' AND data LIKE '%</%'".format(chain))
 		write_row("Contain HTML/XML", count_rows_matching_regex(cursor, REGEX_PATTERN_HTML))
 
 		# count base64
-		total_data_urls = conn.execute("SELECT COUNT(*) FROM text_results WHERE data LIKE 'data:%;base64,%'").fetchone()[0]
+		total_data_urls = conn.execute("SELECT COUNT(*) FROM text_results WHERE chain = '{}' AND data LIKE 'data:%;base64,%'".format(chain)).fetchone()[0]
 		write_row("Contain Data URLs", total_data_urls)
 
 		self.write("</table>")
@@ -185,13 +199,16 @@ class WebServer(BaseHTTPRequestHandler):
 		# most valuable
 		self.write("<strong>Most valuable transactions</strong>")
 		self.write("<table><tr><th>Hash</th><th>Text</th><th>Value</th><th>Date</th></tr>")
-		cursor = conn.execute("SELECT hash, data, gwei_value, block_timestamp FROM text_results ORDER BY gwei_value DESC LIMIT 10")
+		cursor = conn.execute("SELECT hash, data, value, block_timestamp FROM text_results WHERE chain = '{}' ORDER BY value DESC LIMIT 10".format(chain))
 		for row in cursor:
 			hash = row[0]
+
+			value_str = str(row[2] / 1000000000) + ' ETH' if chain == 'eth' else str(row[2] / 100000000) + ' BTC'
+
 			write_row(
-				f'<a href="https://etherscan.io/tx/{hash}" target="_blank">{hash}</a>',
+				f'<a href="{"https://etherscan.io" if chain == "eth" else "https://blockchain.info"}/tx/{hash}" target="_blank">{hash}</a>',
 				row[1].decode("utf-8"),
-				str(row[2] / 1000000000) + " ETH",
+				value_str,
 				row[3]
 			)
 		self.write("</table>")
@@ -199,7 +216,7 @@ class WebServer(BaseHTTPRequestHandler):
 		# ranking
 		self.write("<strong>Most Frequently</strong>")
 		self.write("<table><tr><th>Text</th><th>Amount</th></tr>")
-		cursor = conn.execute("SELECT data, COUNT(data) as count FROM text_results GROUP BY data HAVING count >= 1000 ORDER BY count DESC")
+		cursor = conn.execute("SELECT data, COUNT(data) as count FROM text_results WHERE chain = '{}' GROUP BY data HAVING count >= 1000 ORDER BY count DESC".format(chain))
 		for row in cursor: write_row(row[0].decode("utf-8"), row[1])
 		self.write("</table>")
 
@@ -209,8 +226,10 @@ if __name__ == "__main__":
 	print(f"""Server started! 🎉
 
 View results for
-- Files Analysis at http://{HOST}:{PORT}/files
-- Text Analysis at http://{HOST}:{PORT}/text
+- Files Analysis (BTC) at http://{HOST}:{PORT}/files/btc
+- Text Analysis (BTC) at http://{HOST}:{PORT}/text/btc
+- Files Analysis (ETH) at http://{HOST}:{PORT}/files/eth
+- Text Analysis (ETH) at http://{HOST}:{PORT}/text/eth
 """)
 
 	try:

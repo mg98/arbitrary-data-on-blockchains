@@ -1,7 +1,7 @@
-from .files.eth import EthFilesAnalysis
-from .files.btc import BtcFilesAnalysis
-from .text.eth import EthTextAnalysis
-from .text.btc import BtcTextAnalysis
+from .files.eth_files import EthFilesAnalysis
+from .files.btc_files import BtcFilesAnalysis
+from .text.eth_text import EthTextAnalysis
+from .text.btc_text import BtcTextAnalysis
 
 __all__ = [
 	'EthFilesAnalysis',

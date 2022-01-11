@@ -41,7 +41,9 @@ class TextAnalysis(ABC):
 
 		# reset
 		#if self.reset: self.conn.execute("DELETE FROM text_results WHERE chain = ?", self.chain)
-		if self.reset: self.conn.execute("DELETE FROM text_results")
+		if self.reset: 
+			self.conn.execute("DELETE FROM text_results")
+			self.conn.commit()
 
 		self.run_core()
 
