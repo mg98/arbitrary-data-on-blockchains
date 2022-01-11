@@ -1,4 +1,3 @@
-files/
 .env
 *.db
 *.db-journal
