@@ -13,44 +13,47 @@ class BtcTextAnalysis(TextAnalysis):
 
 		query = """
 			DECLARE REGEX_UTF8 DEFAULT "{regex_utf8}";
+			DECLARE REGEX_OP_CODE DEFAULT r'\ ?OP_[A-Z0-9]*\ ?'; -- matches OP-codes and surrounding spaces
 			
-						-- standard contain >= 90% utf8
+			-- Standard (P2X) with >= 90% UTF8 characters
 			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
 				SELECT AS STRUCT  
 					STRING_AGG(DISTINCT o.`type`) AS `type`,
-					ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), r'\ ?OP_[A-Z0-9]*\ ?', ''), REGEX_UTF8), '') AS `data`
+					ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), REGEX_OP_CODE, ''), REGEX_UTF8), '') AS `data`
 				FROM t.`outputs` o 
 				WHERE o.`type` != 'nonstandard'
 			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
 			WHERE 
 			IFNULL((
-				SELECT ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), r'\ ?OP_[A-Z0-9]*\ ?', ''), REGEX_UTF8), '') AS `data`
+				SELECT ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), REGEX_OP_CODE, ''), REGEX_UTF8), '') AS `data`
 				FROM t.`outputs` o 
 				WHERE o.`type` != 'nonstandard'
 			), '') != ''
 			AND LENGTH(ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(
 				(SELECT STRING_AGG(`script_asm`, '') FROM t.`outputs` o WHERE o.`type` != 'nonstandard'), 
 			REGEX_UTF8), '')) >= CAST(LENGTH(
-				(SELECT REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), r'\ ?OP_[A-Z0-9]*\ ?', '') FROM t.`outputs` o WHERE o.`type` != 'nonstandard')
+				(SELECT REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), REGEX_OP_CODE, '') FROM t.`outputs` o WHERE o.`type` != 'nonstandard')
 			) * 0.9 AS FLOAT64)
 
 			UNION ALL
 
 			-- Non-Standard Outputs (ex. OP_RETURN)
-			SELECT `hash`, `block_timestamp`, `output_value` AS `value`,
-			(SELECT AS STRUCT 
-				'nonstandard output' AS `type`, 
-				ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(STRING_AGG(`script_asm`, ''), REGEX_UTF8), '') AS `data`
-				FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN %') AS `outputs`
+			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
+				SELECT AS STRUCT 
+					'nonstandard output' AS `type`, 
+					STRING_AGG(REGEXP_REPLACE(`script_asm`, REGEX_OP_CODE, ''), '') AS `data`
+				FROM t.`outputs` o 
+				WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%'
+			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
 			WHERE 
 			'nonstandard' IN (SELECT `type` FROM t.`outputs`)
-			AND (SELECT STRING_AGG(`script_asm`, '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN %') != ''
+			AND (SELECT STRING_AGG(REGEXP_REPLACE(`script_asm`, REGEX_OP_CODE, ''), '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%') != ''
 			AND REGEXP_CONTAINS(
 				REGEXP_REPLACE(
-					(SELECT STRING_AGG(`script_asm`, '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN %'), 
-					r'\ ?OP_[A-Z0-9]*\ ',
+					(SELECT STRING_AGG(`script_asm`, '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%'), 
+					REGEX_OP_CODE,
 					''
 				),
 				{full_regex_utf8}
@@ -113,7 +116,8 @@ class BtcTextAnalysis(TextAnalysis):
 			FROM `bigquery-public-data.crypto_bitcoin.blocks`
 			WHERE 
 			-- First 16 characters represent block height. Arbitrary data begins at position 17.
-			REGEXP_CONTAINS(SUBSTR(`coinbase_param`, 17), {full_regex_utf8})
+			ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`coinbase_param`, REGEX_UTF8), '') != ''
+			AND REGEXP_CONTAINS(SUBSTR(`coinbase_param`, 17), {full_regex_utf8})
 
 			{limit}
 		""".format(
@@ -137,7 +141,6 @@ class BtcTextAnalysis(TextAnalysis):
 
 		try:
 			for tx in query_job:
-				print(tx)
 				hex_value = tx['outputs']['data']
 				if hex_value and not len(hex_value) % 2:
 					insert(
