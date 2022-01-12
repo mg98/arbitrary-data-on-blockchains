@@ -17,16 +17,8 @@ class BtcFilesAnalysis(FilesAnalysis):
 		sigs = [v for values in self.file_signatures.values() for v in values]
 
 		sql_data_script = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, '[a-f0-9]{40,}'), '')"
-		sql_agg_addresses = "STRING_AGG(ARRAY_TO_STRING(remove_nonstandard(`addresses`), ''), '')"
 		
 		query = """
-			-- remove 'nonstandard' in the beginning of each address in array
-			CREATE TEMPORARY FUNCTION remove_nonstandard(addresses ARRAY<STRING>)
-			RETURNS ARRAY<STRING>
-			LANGUAGE js AS \"\"\"
-			return addresses.map(address => address.replace(/^nonstandard/, ''));
-			\"\"\";
-
 			SELECT `transaction_hash` AS `hash`, `block_timestamp`, CONCAT(`type`, ' output script') AS `type`, (
 				SELECT AS STRUCT SUM(`value`) AS `value`, STRING_AGG({sql_data_script}, '') AS `data`
 					FROM `bigquery-public-data.crypto_bitcoin.outputs` o
@@ -34,32 +26,10 @@ class BtcFilesAnalysis(FilesAnalysis):
 				) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.outputs` AS big_o
 			WHERE {script_has_sig} AND {output_unspent}
-			
-			UNION ALL
-
-			SELECT `transaction_hash` AS `hash`, `block_timestamp`, CONCAT(`type`, ' output address') AS `type`, (
-				SELECT AS STRUCT SUM(`value`) AS `value`, {sql_agg_addresses} AS `data`
-					FROM `bigquery-public-data.crypto_bitcoin.outputs` o
-					WHERE o.`transaction_hash` = big_o.`transaction_hash` AND {address_is_hex}
-				) AS `outputs`
-			FROM `bigquery-public-data.crypto_bitcoin.outputs` AS big_o
-			WHERE {address_has_sig} AND {output_unspent} AND (
-				LENGTH(ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(
-					(SELECT {sql_agg_addresses}
-						FROM `bigquery-public-data.crypto_bitcoin.outputs` o
-						WHERE o.`transaction_hash` = big_o.`transaction_hash` AND {address_is_hex}),
-					'[a-f0-9]'
-				), '')) = LENGTH(
-						(SELECT {sql_agg_addresses}
-							FROM `bigquery-public-data.crypto_bitcoin.outputs` o
-							WHERE o.`transaction_hash` = big_o.`transaction_hash` AND {address_is_hex})
-					)
-			)
 
 			{limit}
 		""".format(
 			sql_data_script=sql_data_script,
-			sql_agg_addresses=sql_agg_addresses,
 
 			script_has_sig=' OR '.join(list(map(lambda fs: "{} LIKE '%{}%'".format(
 					# concat all hexadecimal segments with at least 40 characters
