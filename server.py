@@ -12,7 +12,7 @@ head = """
 <html>
 <head>
 	<title>Blockchain Data Analysis</title>
-	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="/style.css">
 	<style type="text/css">
 		html, body {
 			font-family: Arial, sans-serif;
@@ -36,7 +36,7 @@ head = """
 	</style>
 	<script>
 		function markAsInvalid(el, hashVal) {
-			fetch("/files/delete?hash=" + hashVal);
+			fetch("/files/btc/delete?hash=" + hashVal);
 			el.parentElement.parentElement.remove();
 		}
 	</script>
@@ -59,23 +59,23 @@ class WebServer(BaseHTTPRequestHandler):
 
 		params = urlparse(self.path)
 		mode = params.path[1:].split('/')[0]
-
-		if mode in ['files', 'text', 'files/delete']:
+		
+		if mode in ['files', 'text']:
 			chain = params.path[1:].split('/')[1]
 			if chain not in ['btc', 'eth']:
 				self.send_error(400, "Selected Chain Not Accepted")
 				return
 
-			if mode == "files":
+			if len(params.path[1:].split('/')) > 2 and params.path[1:].split('/')[2] == "delete":
+				hash = params.query[5:]
+				cursor = conn.cursor()
+				cursor.execute("UPDATE files_results SET deleted = 1 WHERE chain = ? AND hash = ?", (chain, hash,))
+				conn.commit()
+			elif mode == "files":
 				page = int(params.query[2:]) if params.query[:2] == 'p=' else 1
 				self.render_files_analysis(page, chain)
 			elif mode == "text":
 				self.render_text_analysis(chain)
-			elif mode == "files/delete":
-				hash = params.query[5:]
-				cursor = conn.cursor()
-				cursor.execute("UPDATE files_results SET deleted = 1 WHERE chain = ? hash = ?", (chain, hash,))
-				conn.commit()
 
 		self.write(tail)
 
@@ -92,18 +92,18 @@ class WebServer(BaseHTTPRequestHandler):
 			""".format(page-1, page+1)
 
 		self.write(nav)
-		self.write("<table><tr><th>Chain</th><th>Hash</th><th>Type</th><th>Method</th><th>To Contract</th><th>Content</th><th>Block Timestamp</th><th>Action</th></tr>")
+		self.write("<table><tr><th>Chain</th><th>Hash</th><th>Type</th><th>Method</th>" + ("<th>To Contract</th>" if chain == 'eth' else '') + "<th>Content</th><th>Block Timestamp</th><th>Action</th></tr>")
 
 		cursor = conn.execute("""
-				SELECT hash, chain, mime_type, method, to_contract, data, block_timestamp 
+				SELECT hash, chain, mime_type, method, type, to_contract, data, block_timestamp 
 				FROM files_results 
 				WHERE deleted = 0 
-					AND chain = '{}' 
+					AND chain = '{}'
 				LIMIT 20 
 				OFFSET {}
 			""".format(chain, 20 * (page-1)))
 		for row in cursor:
-			hash_val, chain, mime_type, method, to_contract, data, block_timestamp = str(row[0]), str(row[1]), str(row[2]), str(row[3]), bool(row[4]), str(row[5]), row[6]
+			hash_val, chain, mime_type, method, type, to_contract, data, block_timestamp = str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]), bool(row[5]), str(row[6]), row[7]
 			file_suffix = mime_type.rsplit('/', 1)[-1]
 
 			data_displayed = f"""<a href="data:{mime_type};base64,{data}" download="{hash_val}.{file_suffix}">Download</a>"""
@@ -115,8 +115,8 @@ class WebServer(BaseHTTPRequestHandler):
 					<td>{chain.upper()}</td>
 					<td><a href="{'https://etherscan.io' if chain == 'eth' else 'https://blockchain.info'}/tx/{hash_val}" target="_blank">{hash_val}</a></td>
 					<td>{mime_type}</td>
-					<td>{method}</td>
-					<td>{'Yes' if to_contract else 'No'}</td>
+					<td>{method} ({type})</td>
+					{'<td>' + ('Yes' if to_contract else 'No') + '</td>' if chain == 'eth' else ''}
 					<td>{data_displayed}</td>
 					<td>{block_timestamp}</td>
 					<td><button onclick="markAsInvalid(this, '{hash_val}')">Mark as invalid</button></td>

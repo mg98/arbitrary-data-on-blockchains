@@ -13,29 +13,52 @@ class BtcFilesAnalysis(FilesAnalysis):
 
 		sigs = [v for values in self.file_signatures.values() for v in values]
 
-		#sql_data_script = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, '[a-f0-9]{40,}'), '')"
-
-		data = "STRING_AGG(ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, r'[a-f0-9]{40,}'), ''), '')"
+		data = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, r'[a-f0-9]{40,}'), '')"
 		
+		def like(sig):
+			return ('%' if len(sig) > 6 else '') + sig + '%'
+
 		query = """
-			-- Non-Standard OP_RETURN
+			-- Output Scripts
 			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
 				SELECT AS STRUCT 
-					STRING_AGG(`type`) AS `type`, 
+					STRING_AGG(DISTINCT `type`) AS `type`, 
 					{data} AS `data` 
-				FROM t.`outputs` o
+				FROM t.`inputs` o
 			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
-			WHERE {script_has_sig}
+			WHERE {output_script_has_sig}
+
+			UNION ALL
+
+			-- Input Scripts
+			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
+				SELECT AS STRUCT 
+					CONCAT('input ', STRING_AGG(DISTINCT `type`) AS `type`, 
+					{data} AS `data` 
+				FROM t.`inputs`
+			) AS `outputs`
+			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
+			WHERE {input_script_has_sig}
+
+			UNION ALL
+
+			-- Coinbase Inputs
+			SELECT `hash`, `timestamp` AS `block_timestamp`, 0 as `value`, STRUCT(
+					'coinbase' AS `type`, 
+					{data} AS `data` 
+			) AS `outputs`
+			FROM `bigquery-public-data.crypto_bitcoin.blocks` t
+			WHERE {coinbase_script_has_sig}
 
 			{limit}
 		""".format(
-			script_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT {data} FROM t.`outputs`) LIKE '%{fs}%'", sigs))),
 			data=data,
+			output_script_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT STRING_AGG({data}, '') FROM t.`outputs`) LIKE '{like(fs)}'", sigs))),
+			input_script_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT STRING_AGG({data}, '') FROM t.`inputs`) LIKE '{like(fs)}'", sigs))),
+			coinbase_script_has_sig=' OR '.join(list(map(lambda fs: f"{data} LIKE '{like(fs)}'", sigs))),
 			limit=f'LIMIT {self.limit}' if self.limit is not None else ''
 		)
-
-		print(query)
 
 		client = bigquery.Client()
 		query_job = client.query(query)
@@ -52,9 +75,9 @@ class BtcFilesAnalysis(FilesAnalysis):
 
 		try:
 			for tx in query_job:
-				print(tx)
-				# candidate with earliest occurrence of signature wins (mime type, sig start pos, value)
-				winner = (None, 0, None)
+				# Candidate with earliest occurrence of signature wins.
+				# Tuple (mime type, sig start pos, value)
+				winner = (None, -1, 0, None)
 				for mime_type, sigs in self.file_signatures.items():
 					for sig in sigs:
 						sig_start = tx['outputs']['data'].find(sig)
@@ -63,7 +86,7 @@ class BtcFilesAnalysis(FilesAnalysis):
 							if sig_start == 0: break
 
 				hex_value = winner[2]
-				
+
 				if hex_value and not len(hex_value) % 2:
 					insert(
 						tx['hash'],
