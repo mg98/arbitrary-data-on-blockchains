@@ -11,52 +11,31 @@ class BtcFilesAnalysis(FilesAnalysis):
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""
 
-		# concat all hexadecimal segments with at least 40 characters
-		"ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, '[a-f0-9]{40,}'), '')"
-
 		sigs = [v for values in self.file_signatures.values() for v in values]
 
-		sql_data_script = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, '[a-f0-9]{40,}'), '')"
+		#sql_data_script = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, '[a-f0-9]{40,}'), '')"
+
+		data = "STRING_AGG(ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, r'[a-f0-9]{40,}'), ''), '')"
 		
 		query = """
-			SELECT `transaction_hash` AS `hash`, `block_timestamp`, CONCAT(`type`, ' output script') AS `type`, (
-				SELECT AS STRUCT SUM(`value`) AS `value`, STRING_AGG({sql_data_script}, '') AS `data`
-					FROM `bigquery-public-data.crypto_bitcoin.outputs` o
-					WHERE o.`transaction_hash` = big_o.`transaction_hash`
-				) AS `outputs`
-			FROM `bigquery-public-data.crypto_bitcoin.outputs` AS big_o
-			WHERE {script_has_sig} AND {output_unspent}
+			-- Non-Standard OP_RETURN
+			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
+				SELECT AS STRUCT 
+					STRING_AGG(`type`) AS `type`, 
+					{data} AS `data` 
+				FROM t.`outputs` o
+			) AS `outputs`
+			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
+			WHERE {script_has_sig}
 
 			{limit}
 		""".format(
-			sql_data_script=sql_data_script,
-
-			script_has_sig=' OR '.join(list(map(lambda fs: "{} LIKE '%{}%'".format(
-					# concat all hexadecimal segments with at least 40 characters
-					sql_data_script, fs
-				), sigs))),
-
-			address_is_hex="""
-				LENGTH(ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(
-					REPLACE(ARRAY_TO_STRING(o.`addresses`, ''), 'nonstandard', ''),
-					'[a-f0-9]'
-				), '')) = LENGTH(REPLACE(ARRAY_TO_STRING(o.`addresses`, ''), 'nonstandard', ''))
-			""",
-
-			address_has_sig=' OR '.join(list(map(lambda fs: "{} LIKE '%{}%'".format(
-					# concat output addresses
-					"ARRAY_TO_STRING(`addresses`, '')", fs
-				), sigs))),
-
-			output_unspent="""
-				NOT EXISTS(
-					SELECT 1 FROM `bigquery-public-data.crypto_bitcoin.inputs` i
-					WHERE i.`transaction_hash` = big_o.`transaction_hash`
-				)
-			""",
-			
-			limit='LIMIT {}'.format(self.limit) if self.limit is not None else ''
+			script_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT {data} FROM t.`outputs`) LIKE '%{fs}%'", sigs))),
+			data=data,
+			limit=f'LIMIT {self.limit}' if self.limit is not None else ''
 		)
+
+		print(query)
 
 		client = bigquery.Client()
 		query_job = client.query(query)
@@ -73,17 +52,15 @@ class BtcFilesAnalysis(FilesAnalysis):
 
 		try:
 			for tx in query_job:
-				print(tx['hash'])
-				
-				print(tx['type'], tx['outputs']['data'])
-
-				# candidate with longest signature wins (mime type, sig length, value)
+				print(tx)
+				# candidate with earliest occurrence of signature wins (mime type, sig start pos, value)
 				winner = (None, 0, None)
 				for mime_type, sigs in self.file_signatures.items():
 					for sig in sigs:
 						sig_start = tx['outputs']['data'].find(sig)
-						if sig_start != -1 and len(sig) > winner[1]:
-							winner = (mime_type, len(sig), tx['outputs']['data'][sig_start:])
+						if sig_start != -1 and sig_start > winner[1]:
+							winner = (mime_type, sig_start, tx['outputs']['data'][sig_start:])
+							if sig_start == 0: break
 
 				hex_value = winner[2]
 				
@@ -93,7 +70,7 @@ class BtcFilesAnalysis(FilesAnalysis):
 						winner[0],
 						'Embedded',
 						tx['block_timestamp'],
-						tx['type'],
+						tx['outputs']['type'],
 						FilesAnalysis.hex_to_base64(hex_value)
 					)
 				else:
