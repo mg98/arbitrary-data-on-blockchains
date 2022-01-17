@@ -24,20 +24,21 @@ pip3 install -r requirements.txt
 Running this script will scan the Ethereum blockchain via BigQuery for arbitrary content and store the results in the SQLite database (`results.db`). The analyzer has two modes and will accordingly either scan for files of popular type or embedded UTF-8 text strings.
 
 ```
-usage: analyze.py [-h] [--limit LIMIT] [--reset | --no-reset] [--mimes MIMES] [--skip-injected-jpegs | --no-skip-injected-jpegs] {files,text}
+usage: analyze.py [-h] [--limit LIMIT] [--reset | --no-reset] [--mimes MIMES] {btc,eth} {files,text}
 
-Analyze the Ethereum blockchain for arbitrary content.
+Analyze blockchains for arbitrary content.
 
 positional arguments:
-  {files,text}          Type of content to look for.
+  {btc,eth}            Blockchain to analyze.
+  {files,text}         Type of content to look for.
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --limit LIMIT         Limit the results processed by the BigQuery SQL query. If not set, proceeds to query the entire blockchain.
-  --reset, --no-reset   If set, current results get cleared out beforehand and a full analysis is done. (default: False)
-  --mimes MIMES         Comma separated list of mime types to be considered for files analysis (default: '*').
-  --skip-injected-jpegs, --no-skip-injected-jpegs
-                        Search for injected jpegs in files analysis produces many results with many false positives (approx. > 98%) (default: True)
+  -h, --help           show this help message and exit
+  --limit LIMIT        Limit the results processed by the BigQuery SQL query. If not set, proceeds to query
+                       the entire blockchain.
+  --reset, --no-reset  If set, current results get cleared out beforehand and a full analysis is done.
+                       (default: False)
+  --mimes MIMES        Comma separated list of mime types to be considered for files analysis (default: '*').
 ```
 
 ### 📖 View Results

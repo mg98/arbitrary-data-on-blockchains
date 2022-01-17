@@ -4,22 +4,34 @@ from google.cloud import bigquery
 
 class EthTextAnalysis(TextAnalysis):
 	"""Text Analysis for the Ethereum blockchain."""
-
-	"""Identifier of analyzed blockchain."""
-	CHAIN = 'eth'
+	
+	def __init__(self, limit: int = 0, reset: bool = False):
+		super().__init__('eth', limit, reset)
 
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""
 
 		query = """
-			SELECT `hash`, `input`, ROUND(IEEE_DIVIDE(`value`, 1000000000)) AS gwei_value, t.`block_timestamp`, CASE WHEN c.`address` IS NOT NULL THEN true ELSE false END AS to_contract
+			DECLARE REGEX_UTF8 DEFAULT "^0x{regex_utf8}+$";
+
+			SELECT `hash`, `input` AS `data`, ROUND(IEEE_DIVIDE(`value`, 1000000000)) AS gwei_value, t.`block_timestamp`, 'tx' AS `type`,
+			CASE WHEN c.`address` IS NOT NULL THEN true ELSE false END AS to_contract
 			FROM `bigquery-public-data.crypto_ethereum.transactions` t
 			LEFT OUTER JOIN `bigquery-public-data.crypto_ethereum.contracts` c
 			ON c.`address` = `to_address`
-			WHERE REGEXP_CONTAINS(`input`, r'^0x{}+$') {}
+			WHERE REGEXP_CONTAINS(`input`, REGEX_UTF8)
+
+			# UNION ALL
+
+			# SELECT `hash`, `extra_data` AS `data`, 0 AS gwei_value, `timestamp` AS `block_timestamp`, 'coinbase' AS `type`,
+			# false AS to_contract
+			# FROM `bigquery-public-data.crypto_ethereum.blocks`
+			# WHERE REGEXP_CONTAINS(`extra_data`, REGEX_UTF8)
+
+			{limit}
 		""".format(
-			TextAnalysis.REGEX_UTF8,
-			'LIMIT {}'.format(self.limit) if self.limit is not None else ''
+			regex_utf8=TextAnalysis.REGEX_UTF8,
+			limit='LIMIT {}'.format(self.limit) if self.limit is not None else ''
 		)
 
 		client = bigquery.Client()
@@ -27,25 +39,18 @@ class EthTextAnalysis(TextAnalysis):
 
 		print("Writing results to db...")
 
-		def insert(hash: str, data: str, gwei_value: int, block_timestamp: str, to_contract: bool):
-			self.conn.execute("""
-				INSERT INTO text_results (
-					chain, hash, data, value, block_timestamp, to_contract
-				) VALUES (?, ?, ?, ?, ?, ?)
-			""", (EthTextAnalysis.CHAIN, hash, data, gwei_value, block_timestamp, to_contract))
-			self.conn.commit()
-
 		try:
 			for tx in query_job:
 				print(tx["hash"])
-				hex_value = tx["input"][2:]
-				print(tx["input"])
+
+				hex_value = tx["data"][2:]
 				if hex_value and not len(hex_value) % 2:
-					insert(
+					self.insert(
 						tx['hash'],
 						codecs.decode(hex_value, 'hex'),
 						int(tx['gwei_value']),
 						tx['block_timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
+						tx['type'],
 						tx['to_contract']
 					)
 			print("Success!")

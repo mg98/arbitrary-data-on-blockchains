@@ -8,15 +8,18 @@ class BtcFilesAnalysis(FilesAnalysis):
 	"""Identifier of analyzed blockchain."""
 	CHAIN = 'btc'
 
+	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
+		super().__init__('btc', limit, reset, mime_types)
+
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""
 
 		sigs = [v for values in self.file_signatures.values() for v in values]
 
-		data = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, r'[a-f0-9]{40,}'), '')"
-		
-		def like(sig):
-			return ('%' if len(sig) > 6 else '') + sig + '%'
+		data = "STRING_AGG(ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`script_asm`, r'[a-f0-9]{40,}'), ''), '')"
+		coinbase_data = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(SUBSTR(`coinbase_param`, 17), r'[a-f0-9]{40,}'), '')"
+
+		like = lambda sig: ('%' if len(sig) >= 6 else '') + sig + '%'
 
 		query = """
 			-- Output Scripts
@@ -24,29 +27,43 @@ class BtcFilesAnalysis(FilesAnalysis):
 				SELECT AS STRUCT 
 					STRING_AGG(DISTINCT `type`) AS `type`, 
 					{data} AS `data` 
-				FROM t.`inputs` o
+				FROM t.`outputs` o
 			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
-			WHERE {output_script_has_sig}
+			WHERE {output_has_sig}
 
 			UNION ALL
 
-			-- Input Scripts
+			-- Non-Standard Input Scripts
 			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
 				SELECT AS STRUCT 
-					CONCAT('input ', STRING_AGG(DISTINCT `type`) AS `type`, 
+					CONCAT('input ', STRING_AGG(DISTINCT `type`)) AS `type`, 
 					{data} AS `data` 
-				FROM t.`inputs`
+				FROM t.`inputs` i
+				WHERE i.`type` = 'nonstandard'
 			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
-			WHERE {input_script_has_sig}
+			WHERE {nonst_input_has_sig}
+
+			UNION ALL
+
+			-- ScriptHash (P2SH) Inputs
+			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
+				SELECT AS STRUCT 
+					CONCAT('input ', STRING_AGG(DISTINCT `type`)) AS `type`, 
+					{data} AS `data` 
+				FROM t.`inputs` i
+				WHERE i.`type` = 'scripthash'
+			) AS `outputs`
+			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
+			WHERE {p2sh_input_has_sig}
 
 			UNION ALL
 
 			-- Coinbase Inputs
 			SELECT `hash`, `timestamp` AS `block_timestamp`, 0 as `value`, STRUCT(
 					'coinbase' AS `type`, 
-					{data} AS `data` 
+					{coinbase_data} AS `data` 
 			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.blocks` t
 			WHERE {coinbase_script_has_sig}
@@ -54,9 +71,11 @@ class BtcFilesAnalysis(FilesAnalysis):
 			{limit}
 		""".format(
 			data=data,
-			output_script_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT STRING_AGG({data}, '') FROM t.`outputs`) LIKE '{like(fs)}'", sigs))),
-			input_script_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT STRING_AGG({data}, '') FROM t.`inputs`) LIKE '{like(fs)}'", sigs))),
-			coinbase_script_has_sig=' OR '.join(list(map(lambda fs: f"{data} LIKE '{like(fs)}'", sigs))),
+			coinbase_data=coinbase_data,
+			output_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT {data} FROM t.`outputs`) LIKE '{like(fs)}'", sigs))),
+			nonst_input_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT {data} FROM t.`inputs` i WHERE i.`type` = 'nonstandard') LIKE '{like(fs)}'", sigs))),
+			p2sh_input_has_sig=' OR '.join(list(map(lambda fs: f"(SELECT {data} FROM t.`inputs` i WHERE i.`type` = 'scripthash') LIKE '{like(fs)}'", sigs))),
+			coinbase_script_has_sig=' OR '.join(list(map(lambda fs: f"{coinbase_data} LIKE '{like(fs)}'", sigs))),
 			limit=f'LIMIT {self.limit}' if self.limit is not None else ''
 		)
 
@@ -65,16 +84,10 @@ class BtcFilesAnalysis(FilesAnalysis):
 
 		print("Writing results to db...")
 
-		def insert(hash: str, mime_type: str, method: str, block_timestamp: str, type: str, data: str):
-			self.conn.execute("""
-				INSERT INTO files_results (
-					chain, hash, mime_type, method, block_timestamp, type, data
-				) VALUES (?, ?, ?, ?, ?, ?, ?)
-			""", (BtcFilesAnalysis.CHAIN, hash, mime_type, method, block_timestamp, type, data))
-			self.conn.commit()
-
 		try:
 			for tx in query_job:
+				print(tx['hash'])
+
 				# Candidate with earliest occurrence of signature wins.
 				# Tuple (mime type, sig start pos, value)
 				winner = (None, -1, 0, None)
@@ -88,7 +101,7 @@ class BtcFilesAnalysis(FilesAnalysis):
 				hex_value = winner[2]
 
 				if hex_value and not len(hex_value) % 2:
-					insert(
+					self.insert(
 						tx['hash'],
 						winner[0],
 						'Embedded',

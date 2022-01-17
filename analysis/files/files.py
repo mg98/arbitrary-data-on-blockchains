@@ -7,18 +7,18 @@ from abc import ABC, abstractmethod
 class FilesAnalysis(ABC):
 	"""Abstraction for analysis of transaction input data that contain popular file types."""
 
-	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*'], skip_injected_jpegs: bool = True):
+	def __init__(self, chain: str, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
 		"""
 		Initialize files analysis.
 
+		:param chain Blockchain.
 		:param limit Limit results processed by BigQuery.
 		:param reset Flag about resetting the database before starting the analysis.
 		:param mime_types List of considerable mime types for this analysis. Asterix-sign supported.
-		:param skip_injected_jpegs Do not search for injected jpegs.
 		"""
+		self.chain = chain
 		self.limit = limit
 		self.reset = reset
-		self.skip_injected_jpegs = skip_injected_jpegs
 		self.file_signatures = FilesAnalysis.get_file_signatures(mime_types)
 
 	def __enter__(self):
@@ -27,6 +27,14 @@ class FilesAnalysis(ABC):
 
 	def __exit__(self, type, val, tb):
 		self.conn.close()
+
+	def insert(self, hash: str, mime_type: str, method: str, block_timestamp: str, type: str, data: str, to_contract: bool = False):
+		self.conn.execute("""
+			INSERT INTO files_results (
+				chain, hash, mime_type, method, block_timestamp, type, data, to_contract
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		""", (self.chain, hash, mime_type, method, block_timestamp, type, data, to_contract))
+		self.conn.commit()
 
 	@staticmethod
 	def get_file_signatures(mimes: list[str]) -> dict[str,list[str]]:
@@ -56,7 +64,7 @@ class FilesAnalysis(ABC):
 
 	def is_expensive_type(self, mime_type: str) -> bool:
 		"""Check if mime type is considered expensive for injected content analysis (too many false positives)."""
-		return not mime_type.startswith("image") or (mime_type == "image/jpeg" and self.skip_injected_jpegs)
+		return not mime_type.startswith("image") or (mime_type == "image/jpeg")
 
 	def run(self):
 		"""Runs the query on BigQuery and persists results to the database."""
@@ -77,7 +85,7 @@ class FilesAnalysis(ABC):
 		""")
 
 		# reset
-		if self.reset: self.conn.execute("DELETE FROM files_results")
+		if self.reset: self.conn.execute("DELETE FROM files_results WHERE chain = ?", (self.chain,))
 
 		self.run_core()
 

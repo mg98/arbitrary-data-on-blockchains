@@ -5,6 +5,8 @@
     "image/webp": ["52494646"],
     "audio/mp3": ["494433"],
     "audio/wav": ["52494646"],
+    "audio/flac": ["664c6143"],
+    "audio/aiff": ["464f524d"],
     "video/mp4": ["667479"],
     "video/mov": ["6674797071742020"],
     "video/wmv": ["a6d900aa0062ce6c"],

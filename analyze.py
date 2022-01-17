@@ -1,8 +1,9 @@
 import argparse
 import analysis
 
-parser = argparse.ArgumentParser(description='Analyze the Ethereum blockchain for arbitrary content.')
+parser = argparse.ArgumentParser(description='Analyze blockchains for arbitrary content.')
 
+parser.add_argument('chain', choices=['btc', 'eth'], help='Blockchain to analyze.')
 parser.add_argument('mode', choices=['files', 'text'], help='Type of content to look for.')
 parser.add_argument('--limit', help='Limit the results processed by the BigQuery SQL query. If not set, proceeds to query the entire blockchain.')
 parser.add_argument(
@@ -12,12 +13,6 @@ parser.add_argument(
 	action=argparse.BooleanOptionalAction
 )
 parser.add_argument('--mimes', help='Comma separated list of mime types to be considered for files analysis (default: \'*\').', default='*')
-parser.add_argument(
-	'--skip-injected-jpegs',
-	help="Search for injected jpegs in files analysis produces many results with many false positives (approx. > 98%%)",
-	default=True,
-	action=argparse.BooleanOptionalAction
-)
 
 args = parser.parse_args()
 
@@ -26,14 +21,13 @@ if args.mode != 'files' and args.mimes != '*':
 
 
 if args.mode == 'files':
-	analyzer = analysis.BtcFilesAnalysis(
+	analyzer = (analysis.BtcFilesAnalysis if args.chain == 'btc' else analysis.EthFilesAnalysis)(
 		limit=args.limit,
 		reset=args.reset,
-		mime_types=args.mimes.split(','),
-		skip_injected_jpegs=args.skip_injected_jpegs
+		mime_types=args.mimes.split(',')
 	)
 elif args.mode == 'text':
-	analyzer = analysis.BtcTextAnalysis(
+	analyzer = (analysis.BtcTextAnalysis if args.chain == 'btc' else analysis.EthTextAnalysis)(
 		limit=args.limit, 
 		reset=args.reset
 	)

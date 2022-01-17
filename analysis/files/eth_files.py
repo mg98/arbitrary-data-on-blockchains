@@ -4,66 +4,67 @@ from google.cloud import bigquery
 class EthFilesAnalysis(FilesAnalysis):
 	"""Files Analysis for the Ethereum blockchain."""
 
-	"""Identifier of analyzed blockchain."""
-	CHAIN = 'eth'
+	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
+		super().__init__('eth', limit, reset, mime_types)
 
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""
-
+		
 		sigs = [v for values in self.file_signatures.values() for v in values]
-		sigs_for_injected = [v for mime_type in self.file_signatures.keys() for v in self.file_signatures[mime_type] if not self.is_expensive_type(mime_type)]
-		sql_likes = list(map(lambda fs: "`input` LIKE '0x{}%'".format(fs), sigs)) + list(map(lambda fs: "`input` LIKE '0x%{}%'".format(fs), sigs_for_injected))
-
-		# reset table
-		if self.reset: self.conn.execute("DELETE FROM files_results WHERE chain = ?", (EthFilesAnalysis.CHAIN,))
-
-		# build where clause
-		sql_where = ' OR '.join(sql_likes)
-		if not self.reset:
-			last_record = self.conn.execute("SELECT block_timestamp FROM files_results ORDER BY block_timestamp DESC LIMIT 1").fetchone()
-			if last_record: sql_where = f't.`block_timestamp` > \'{last_record[0]}\' AND ({sql_where})'
+		sql_likes = lambda field: list(map(lambda sig: f"`{field}`" + " LIKE '0x" + ('%' if len(sig) >= 6 else '') + sig + "%'", sigs))
 
 		query = """
-			SELECT `hash`, `input`, t.`block_timestamp`,
+			SELECT `hash`, `input` AS `data`, t.`block_timestamp`, 'tx' AS `type`,
 			CASE WHEN c.`address` IS NOT NULL THEN true ELSE false END AS to_contract
 			FROM `bigquery-public-data.crypto_ethereum.transactions` t
 			LEFT OUTER JOIN `bigquery-public-data.crypto_ethereum.contracts` c
 			ON c.`address` = `to_address`
-			WHERE {} {}
-		""".format(sql_where, 'LIMIT {}'.format(self.limit) if self.limit is not None else '')
+			WHERE {tx_where}
+
+			UNION ALL
+
+			SELECT `hash`, `extra_data` AS `data`, `timestamp` AS `block_timestamp`, 'coinbase' AS `type`,
+			false AS to_contract
+			FROM `bigquery-public-data.crypto_ethereum.blocks`
+			WHERE {coinbase_where}
+
+			{limit}
+		""".format(
+			tx_where=' OR '.join(sql_likes('input')),
+			coinbase_where=' OR '.join(sql_likes('extra_data')),
+			limit='LIMIT {}'.format(self.limit) if self.limit is not None else ''
+		)
 
 		client = bigquery.Client()
 		query_job = client.query(query)
 
 		print("Writing results to db...")
 
-		def insert(hash: str, mime_type: str, method: str, block_timestamp: str, to_contract: bool, data: str):
-			self.conn.execute("""
-                INSERT INTO files_results (
-                    chain, hash, mime_type, method, block_timestamp, to_contract, data
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (EthFilesAnalysis.CHAIN, hash, mime_type, method, block_timestamp, to_contract, data))
-
 		try:
 			for tx in query_job:
-				print(tx["hash"])
-				mime_type = self.get_mime_type(tx['input'])
+				print(tx['hash'])
 
-				for sig in self.file_signatures[mime_type]:
-					start = tx["input"].find(sig)
-					# consider only embedded or not expensive injected files
-					if start != -1 and (start == 2 or not self.is_expensive_type(mime_type)):
-						hex_value = tx["input"][start:]
-						break
+				# Candidate with earliest occurrence of signature wins.
+				# Tuple (mime type, sig start pos, value)
+				winner = (None, -1, 0, None)
+				for mime_type, sigs in self.file_signatures.items():
+					for sig in sigs:
+						sig_start = tx['data'].find(sig)
+						if sig_start != -1 and sig_start > winner[1]:
+							winner = (mime_type, sig_start, tx['data'][sig_start:])
+							if sig_start == 2: break
+
+				mime_type, sig_start, hex_value = winner
 
 				if hex_value and not len(hex_value) % 2:
-					insert(
+					self.insert(
 						tx['hash'],
 						mime_type,
-						"Embedded" if start == 2 else "Injected",
+						'Embedded' if sig_start == 2 else 'Injected',
 						tx['block_timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
-						tx['to_contract'],
-						FilesAnalysis.hex_to_base64(hex_value)
+						tx['type'],
+						FilesAnalysis.hex_to_base64(hex_value),
+						tx['to_contract']
 					)
 				else:
 					print("Failed to decode input.")

@@ -5,35 +5,38 @@ from google.cloud import bigquery
 class BtcTextAnalysis(TextAnalysis):
 	"""Text Analysis for the Bitcoin blockchain."""
 
-	"""Identifier of analyzed blockchain."""
-	CHAIN = 'btc'
+	def __init__(self, limit: int = 0, reset: bool = False):
+		super().__init__('btc', limit, reset)
 
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""
 
+		data = "ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(STRING_AGG(`script_asm`), r'[a-f0-9]{40,}'), '')"
+		utf8_data = f"ARRAY_TO_STRING(REGEXP_EXTRACT_ALL({data}, REGEX_UTF8), '')"
+
 		query = """
 			DECLARE REGEX_UTF8 DEFAULT "{regex_utf8}";
-			DECLARE REGEX_OP_CODE DEFAULT r'\ ?OP_[A-Z0-9]*\ ?'; -- matches OP-codes and surrounding spaces
+			DECLARE REGEX_FULL_UTF8 DEFAULT r'^{regex_utf8}*$';
 			
 			-- Standard (P2X) with >= 90% UTF8 characters
 			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
 				SELECT AS STRUCT  
 					STRING_AGG(DISTINCT o.`type`) AS `type`,
-					ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), REGEX_OP_CODE, ''), REGEX_UTF8), '') AS `data`
+					{utf8_data} AS `data`
 				FROM t.`outputs` o 
 				WHERE o.`type` != 'nonstandard'
 			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
 			WHERE 
 			IFNULL((
-				SELECT ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), REGEX_OP_CODE, ''), REGEX_UTF8), '') AS `data`
+				SELECT {utf8_data}
 				FROM t.`outputs` o 
 				WHERE o.`type` != 'nonstandard'
 			), '') != ''
 			AND LENGTH(ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(
-				(SELECT STRING_AGG(`script_asm`, '') FROM t.`outputs` o WHERE o.`type` != 'nonstandard'), 
+				(SELECT {utf8_data} FROM t.`outputs` o WHERE o.`type` != 'nonstandard'), 
 			REGEX_UTF8), '')) >= CAST(LENGTH(
-				(SELECT REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), REGEX_OP_CODE, '') FROM t.`outputs` o WHERE o.`type` != 'nonstandard')
+				(SELECT {data} FROM t.`outputs` o WHERE o.`type` != 'nonstandard')
 			) * 0.9 AS FLOAT64)
 
 			UNION ALL
@@ -42,26 +45,22 @@ class BtcTextAnalysis(TextAnalysis):
 			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, (
 				SELECT AS STRUCT 
 					'nonstandard output' AS `type`, 
-					STRING_AGG(REGEXP_REPLACE(`script_asm`, REGEX_OP_CODE, ''), '') AS `data`
+					{data} AS `data`
 				FROM t.`outputs` o 
 				WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%'
 			) AS `outputs`
 			FROM `bigquery-public-data.crypto_bitcoin.transactions` t
 			WHERE 
 			'nonstandard' IN (SELECT `type` FROM t.`outputs`)
-			AND (SELECT STRING_AGG(REGEXP_REPLACE(`script_asm`, REGEX_OP_CODE, ''), '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%') != ''
+			AND (SELECT {data} FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%') != ''
 			AND REGEXP_CONTAINS(
-				REGEXP_REPLACE(
-					(SELECT STRING_AGG(`script_asm`, '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%'), 
-					REGEX_OP_CODE,
-					''
-				),
-				{full_regex_utf8}
+				(SELECT {data} FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` NOT LIKE 'OP_RETURN%'),
+				REGEX_FULL_UTF8
 			)
 
 			UNION ALL
 
-			-- Non-Standard Inputs (ex. OP_RETURN)
+			-- Non-Standard Inputs
 			SELECT `hash`, `block_timestamp`, `output_value` AS `value`, 
 			(SELECT AS STRUCT 
 				'nonstandard input' AS `type`, 
@@ -72,7 +71,7 @@ class BtcTextAnalysis(TextAnalysis):
 			-- Check if input script after removal of '[ALL]' occurrences represents a UTF-8 string.
 			'nonstandard' IN (SELECT `type` FROM t.`inputs`)
 			AND (SELECT STRING_AGG(REPLACE(`script_asm`, '[ALL]', ''), '') FROM t.`inputs` i WHERE i.`type` = 'nonstandard') != ''
-			AND REGEXP_CONTAINS((SELECT STRING_AGG(REPLACE(`script_asm`, '[ALL]', ''), '') FROM t.`inputs` i WHERE i.`type` = 'nonstandard'), {full_regex_utf8})
+			AND REGEXP_CONTAINS((SELECT STRING_AGG(REPLACE(`script_asm`, '[ALL]', ''), '') FROM t.`inputs` i WHERE i.`type` = 'nonstandard'), REGEX_FULL_UTF8)
 
 			UNION ALL
 
@@ -86,7 +85,7 @@ class BtcTextAnalysis(TextAnalysis):
 			WHERE
 			'scripthash' IN (SELECT `type` FROM t.`inputs`)
 			AND (SELECT REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), r'(\[ALL\])|\ ', '') FROM t.`inputs` i WHERE i.`type` = 'scripthash') != ''
-			AND REGEXP_CONTAINS((SELECT REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), r'(\[ALL\])|\ ', '') FROM t.`inputs` i WHERE i.`type` = 'scripthash'), {full_regex_utf8})
+			AND REGEXP_CONTAINS((SELECT REGEXP_REPLACE(STRING_AGG(`script_asm`, ''), r'(\[ALL\])|\ ', '') FROM t.`inputs` i WHERE i.`type` = 'scripthash'), REGEX_FULL_UTF8)
 
 
 			UNION ALL
@@ -104,7 +103,7 @@ class BtcTextAnalysis(TextAnalysis):
 			-- Skip 10 characters for "OP_RETURN " string, then check for empty values and UTF-8.
 			'nonstandard' IN (SELECT `type` FROM t.`outputs`)
 			AND (SELECT STRING_AGG(SUBSTR(`script_asm`, 11), '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` LIKE 'OP_RETURN %') != ''
-			AND REGEXP_CONTAINS((SELECT STRING_AGG(SUBSTR(`script_asm`, 11), '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` LIKE 'OP_RETURN %'), {full_regex_utf8})
+			AND REGEXP_CONTAINS((SELECT STRING_AGG(SUBSTR(`script_asm`, 11), '') FROM t.`outputs` o WHERE o.`type` = 'nonstandard' AND o.`script_asm` LIKE 'OP_RETURN %'), REGEX_FULL_UTF8)
 			
 			UNION ALL
 
@@ -117,12 +116,13 @@ class BtcTextAnalysis(TextAnalysis):
 			WHERE 
 			-- First 16 characters represent block height. Arbitrary data begins at position 17.
 			ARRAY_TO_STRING(REGEXP_EXTRACT_ALL(`coinbase_param`, REGEX_UTF8), '') != ''
-			AND REGEXP_CONTAINS(SUBSTR(`coinbase_param`, 17), {full_regex_utf8})
+			AND REGEXP_CONTAINS(SUBSTR(`coinbase_param`, 17), REGEX_FULL_UTF8)
 
 			{limit}
 		""".format(
+			data=data,
+			utf8_data=utf8_data,
 			regex_utf8=TextAnalysis.REGEX_UTF8,
-			full_regex_utf8=f"r'^{TextAnalysis.REGEX_UTF8}*$'",
 			limit='LIMIT {}'.format(self.limit) if self.limit is not None else ''
 		)
 
@@ -131,19 +131,11 @@ class BtcTextAnalysis(TextAnalysis):
 
 		print("Writing results to db...")
 
-		def insert(hash: str, data: str, value: int, block_timestamp: str, type: str):
-			self.conn.execute("""
-				INSERT INTO text_results (
-					chain, hash, data, value, block_timestamp, type
-				) VALUES (?, ?, ?, ?, ?, ?)
-			""", (BtcTextAnalysis.CHAIN, hash, data, value, block_timestamp, type))
-			self.conn.commit()
-
 		try:
 			for tx in query_job:
 				hex_value = tx['outputs']['data']
 				if hex_value and not len(hex_value) % 2:
-					insert(
+					self.insert(
 						tx['hash'],
 						codecs.decode(hex_value, 'hex'),
 						int(tx['value']),
