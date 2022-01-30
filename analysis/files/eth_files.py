@@ -4,8 +4,8 @@ from google.cloud import bigquery
 class EthFilesAnalysis(FilesAnalysis):
 	"""Files Analysis for the Ethereum blockchain."""
 
-	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
-		super().__init__('eth', limit, reset, mime_types)
+	def __init__(self, limit: int = 0, content_types: list[str] = ['*']):
+		super().__init__('eth', limit, content_types)
 
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""
@@ -45,21 +45,21 @@ class EthFilesAnalysis(FilesAnalysis):
 				print(tx['hash'])
 
 				# Candidate with earliest occurrence of signature wins.
-				# Tuple (mime type, sig start pos, value)
+				# Tuple (content type, sig start pos, value)
 				winner = (None, -1, 0, None)
-				for mime_type, sigs in self.file_signatures.items():
+				for content_type, sigs in self.file_signatures.items():
 					for sig in sigs:
 						sig_start = tx['data'].find(sig)
 						if sig_start != -1 and sig_start > winner[1]:
-							winner = (mime_type, sig_start, tx['data'][sig_start:])
+							winner = (content_type, sig_start, tx['data'][sig_start:])
 							if sig_start == 2: break
 
-				mime_type, sig_start, hex_value = winner
+				content_type, sig_start, hex_value = winner
 
 				if hex_value and not len(hex_value) % 2:
 					self.insert(
 						tx['hash'],
-						mime_type,
+						content_type,
 						'Embedded' if sig_start == 2 else 'Injected',
 						tx['block_timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
 						tx['type'],

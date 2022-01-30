@@ -5,8 +5,8 @@ from google.cloud import bigquery
 class BtcTextAnalysis(TextAnalysis):
 	"""Text Analysis for the Bitcoin blockchain."""
 
-	def __init__(self, limit: int = 0, reset: bool = False):
-		super().__init__('btc', limit, reset)
+	def __init__(self, limit: int = 0):
+		super().__init__('btc', limit)
 
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""

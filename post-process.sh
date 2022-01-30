@@ -1,9 +1,9 @@
 #!/bin/bash
 
-[ -e ./results ] && rm -r ./results
-python3 scripts/export_results.py
+[ -e ./files ] && rm -r ./files
+python3 export_results.py
 
-sh scripts/check-zips.sh
-sh scripts/check-jpegs.sh
-sh scripts/check-audios.sh
-sh scripts/check-videos.sh
+sh processing/check-zips.sh
+sh processing/check-jpegs.sh
+sh processing/check-audios.sh
+sh processing/check-videos.sh

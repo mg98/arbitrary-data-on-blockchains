@@ -7,19 +7,17 @@ from abc import ABC, abstractmethod
 class FilesAnalysis(ABC):
 	"""Abstraction for analysis of transaction input data that contain popular file types."""
 
-	def __init__(self, chain: str, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
+	def __init__(self, chain: str, limit: int = 0, content_types: list[str] = ['*']):
 		"""
 		Initialize files analysis.
 
 		:param chain Blockchain.
 		:param limit Limit results processed by BigQuery.
-		:param reset Flag about resetting the database before starting the analysis.
-		:param mime_types List of considerable mime types for this analysis. Asterix-sign supported.
+		:param content_types List of considerable content types for this analysis. Asterix-sign supported.
 		"""
 		self.chain = chain
 		self.limit = limit
-		self.reset = reset
-		self.file_signatures = FilesAnalysis.get_file_signatures(mime_types)
+		self.file_signatures = FilesAnalysis.get_file_signatures(content_types)
 
 	def __enter__(self):
 		self.conn = sqlite3.connect("results.db")
@@ -28,43 +26,39 @@ class FilesAnalysis(ABC):
 	def __exit__(self, type, val, tb):
 		self.conn.close()
 
-	def insert(self, hash: str, mime_type: str, method: str, block_timestamp: str, type: str, data: str, to_contract: bool = False):
+	def insert(self, hash: str, content_type: str, method: str, block_timestamp: str, type: str, data: str, to_contract: bool = False):
 		self.conn.execute("""
 			INSERT INTO files_results (
-				chain, hash, mime_type, method, block_timestamp, type, data, to_contract
+				chain, hash, content_type, method, block_timestamp, type, data, to_contract
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		""", (self.chain, hash, mime_type, method, block_timestamp, type, data, to_contract))
+		""", (self.chain, hash, content_type, method, block_timestamp, type, data, to_contract))
 		self.conn.commit()
 
 	@staticmethod
-	def get_file_signatures(mimes: list[str]) -> dict[str,list[str]]:
-		"""Returns dict of file signatures filtered by `mimes`."""
-		with open('file-signatures.json') as f: file_signatures = json.load(f)
+	def get_file_signatures(content_types: list[str]) -> dict[str,list[str]]:
+		"""Returns dict of file signatures filtered by `content_types`."""
+		with open('analysis/files/file-signatures.json') as f: file_signatures = json.load(f)
 		return {
-			mime_type : file_signatures[mime_type]
-			for mime_type in list(
-				filter(lambda k: any(fnmatch(k, mime) for mime in mimes), file_signatures)
+			content_type : file_signatures[content_type]
+			for content_type in list(
+				filter(lambda k: any(fnmatch(k, ct) for ct in content_types), file_signatures)
 			)
 		}
 
-	def get_mime_type(self, input):
-		"""Returns mime type detected in input (candidate with most signature digits)."""
-		top_candidate = (None, 0) # tuple of mime type and signature length
-		for (mime_type, sigs) in self.file_signatures.items():
+	def get_content_type(self, input):
+		"""Returns content type detected in input (candidate with most signature digits)."""
+		top_candidate = (None, 0) # tuple of content type and signature length
+		for (content_type, sigs) in self.file_signatures.items():
 			for sig in sigs:
 				if sig in input:
 					if top_candidate[1] < len(sig):
-						top_candidate = (mime_type, len(sig))
+						top_candidate = (content_type, len(sig))
 		return top_candidate[0]
 
 	@staticmethod
 	def hex_to_base64(hex_value: str):
 		"""Converts hex to base64."""
 		return codecs.encode(codecs.decode(hex_value, 'hex'), 'base64').decode()
-
-	def is_expensive_type(self, mime_type: str) -> bool:
-		"""Check if mime type is considered expensive for injected content analysis (too many false positives)."""
-		return not mime_type.startswith("image") or (mime_type == "image/jpeg")
 
 	def run(self):
 		"""Runs the query on BigQuery and persists results to the database."""
@@ -74,7 +68,7 @@ class FilesAnalysis(ABC):
 			CREATE TABLE IF NOT EXISTS files_results (
 				chain TEXT, 
 				hash TEXT, 
-				mime_type TEXT, 
+				content_type TEXT, 
 				method TEXT, 
 				to_contract BOOLEAN, 
 				type TEXT, 
@@ -83,9 +77,8 @@ class FilesAnalysis(ABC):
 				deleted BOOLEAN DEFAULT 0
 			)
 		""")
-
-		# reset
-		if self.reset: self.conn.execute("DELETE FROM files_results WHERE chain = ?", (self.chain,))
+		self.conn.execute("DELETE FROM files_results WHERE chain = ?", (self.chain,))
+		self.conn.commit()
 
 		self.run_core()
 

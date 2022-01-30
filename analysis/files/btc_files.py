@@ -8,8 +8,8 @@ class BtcFilesAnalysis(FilesAnalysis):
 	"""Identifier of analyzed blockchain."""
 	CHAIN = 'btc'
 
-	def __init__(self, limit: int = 0, reset: bool = False, mime_types: list[str] = ['*']):
-		super().__init__('btc', limit, reset, mime_types)
+	def __init__(self, limit: int = 0, content_types: list[str] = ['*']):
+		super().__init__('btc', limit, content_types)
 
 	def run_core(self):
 		"""Runs the query on BigQuery and persists results to the database."""
@@ -89,13 +89,13 @@ class BtcFilesAnalysis(FilesAnalysis):
 				print(tx['hash'])
 
 				# Candidate with earliest occurrence of signature wins.
-				# Tuple (mime type, sig start pos, value)
+				# Tuple (content type, sig start pos, value)
 				winner = (None, -1, 0, None)
-				for mime_type, sigs in self.file_signatures.items():
+				for content_type, sigs in self.file_signatures.items():
 					for sig in sigs:
 						sig_start = tx['outputs']['data'].find(sig)
 						if sig_start != -1 and sig_start > winner[1]:
-							winner = (mime_type, sig_start, tx['outputs']['data'][sig_start:])
+							winner = (content_type, sig_start, tx['outputs']['data'][sig_start:])
 							if sig_start == 0: break
 
 				hex_value = winner[2]
