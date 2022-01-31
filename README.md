@@ -1,6 +1,8 @@
-# An Analysis of Arbitrary Content on the Ethereum Blockchain
+# Analyzer of Arbitrary Content on Bitcoin and Ethereum
 
-This project originated as a study project at *Humboldt-University of Berlin*. The goal was to analyze the amount of arbitrary content (such as images or audio) that has been persisted on the Ethereum blockchain. [Read the paper!](./paper.pdf)
+## Background
+
+_-- placeholder --_
 
 ## Requirements
 
