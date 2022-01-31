@@ -4,7 +4,7 @@ import analysis
 parser = argparse.ArgumentParser(description='Analyze blockchains for arbitrary content.')
 
 parser.add_argument('chain', choices=['btc', 'eth'], help='Blockchain to analyze.')
-parser.add_argument('mode', choices=['files', 'text', 'uri'], help='Type of content to look for (URI analysis exists only for ETH).')
+parser.add_argument('mode', choices=['files', 'text', 'url'], help='Type of content to look for (URL analysis exists only for ETH).')
 parser.add_argument('--limit', help='Limit the results processed by the BigQuery SQL query. If not set, proceeds to query the entire blockchain.')
 parser.add_argument('--content-types', help='Comma separated list of content types to be considered for files analysis (default: \'*\').', default='*')
 
@@ -23,8 +23,8 @@ elif args.mode == 'text':
 	analyzer = (analysis.BtcTextAnalysis if args.chain == 'btc' else analysis.EthTextAnalysis)(
 		limit=args.limit
 	)
-elif args.mode == 'uri':
-	analyzer = analysis.EthURIAnalysis(
+elif args.mode == 'url':
+	analyzer = analysis.EthURLAnalysis(
 		limit=args.limit
 	)
 

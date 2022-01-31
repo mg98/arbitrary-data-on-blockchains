@@ -4,12 +4,12 @@ import re
 import sqlite3
 from google.cloud import bigquery
 
-class EthURIAnalysis:
-	"""URI Analysis for the Ethereum blockchain."""
+class EthURLAnalysis:
+	"""URL Analysis for the Ethereum blockchain."""
 
 	def __init__(self, limit: int = 0):
 		"""
-		Initialize URI analysis.
+		Initialize URL analysis.
 
 		:param limit Limit results processed by BigQuery.
 		"""
@@ -24,24 +24,24 @@ class EthURIAnalysis:
 
 	def setup_db(self):
 		self.conn.execute("""
-			CREATE TABLE IF NOT EXISTS eth_uri_results (
+			CREATE TABLE IF NOT EXISTS eth_url_results (
 				hash TEXT,
 				type TEXT,
-				uri TEXT, 
+				url TEXT, 
 				value UNSIGNED BIG INT, 
 				block_timestamp DATETIME, 
 				to_contract BOOLEAN
 			)
 		""")
-		self.conn.execute("DELETE FROM eth_uri_results")
+		self.conn.execute("DELETE FROM eth_url_results")
 		self.conn.commit()
 	
-	def insert(self, hash: str, type: str, uri: str, value: int, block_timestamp: str, to_contract: bool = False):
+	def insert(self, hash: str, type: str, url: str, value: int, block_timestamp: str, to_contract: bool = False):
 		self.conn.execute("""
-			INSERT INTO eth_uri_results (
-				hash, type, uri, value, block_timestamp, to_contract
+			INSERT INTO eth_url_results (
+				hash, type, url, value, block_timestamp, to_contract
 			) VALUES (?, ?, ?, ?, ?, ?)
-		""", (hash, type, uri, value, block_timestamp, to_contract))
+		""", (hash, type, url, value, block_timestamp, to_contract))
 		self.conn.commit()
 
 	def run(self):
@@ -118,21 +118,21 @@ class EthURIAnalysis:
 
 				try:
 					if tx['type'] == 'http':
-						uri = re.search('((https?:\/\/(?:www\.|(?!www)))|www\.)[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[A-Za-z0-9\.]{2,}(\/[^\s]*)?', data).group(0)
+						url = re.search('((https?:\/\/(?:www\.|(?!www)))|www\.)[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[A-Za-z0-9\.]{2,}(\/[^\s]*)?', data).group(0)
 					elif tx['type'] == 'ipfs':
-						uri = re.search('ipfs:\/\/[a-zA-Z0-9]{16,}', data).group(0)
+						url = re.search('ipfs:\/\/[a-zA-Z0-9]{16,}', data).group(0)
 					elif tx['type'] == 'onion':
-						uri = re.search(f'([A-Za-z0-9]{{16}}|[A-Za-z0-9]{{56}})\.onion(\/[^\s]*)?', data).group(0)
+						url = re.search(f'([A-Za-z0-9]{{16}}|[A-Za-z0-9]{{56}})\.onion(\/[^\s]*)?', data).group(0)
 				except Exception as e:
 					continue
 				
 				self.insert(
 					tx['hash'],
 					tx['type'],
-					uri,
+					url,
 					int(tx['value']),
 					tx['block_timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
-					tx['type']
+					tx['to_contract']
 				)
 				print('*', end='')
 			print("Success!")

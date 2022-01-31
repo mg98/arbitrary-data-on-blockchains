@@ -9,6 +9,6 @@ echo '========[ BTC Files ]========'
 python3 analyze.py btc files
 echo '========[ ETH Files ]========'
 python3 analyze.py eth files
-echo '========[ ETH URI ]========'
-python3 analyze.py eth uri
+echo '========[ ETH URL ]========'
+python3 analyze.py eth url
 echo '========[ DONE ]========'
