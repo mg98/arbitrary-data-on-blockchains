@@ -1,8 +1,8 @@
-# Analyzer of Arbitrary Content on Bitcoin and Ethereum
+# Analyzer for Arbitrary Content on Bitcoin and Ethereum
 
 ## Background
 
-_-- placeholder --_
+This program was built as a toolkit for an analysis of arbitrary contents (such as files and text messages) on blockchain-based systems.
 
 ## Requirements
 
