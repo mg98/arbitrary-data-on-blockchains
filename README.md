@@ -2,7 +2,7 @@
 
 ## Background
 
-This program was built as a toolkit for an analysis of arbitrary contents (such as files and text messages) on blockchain-based systems.
+This software was built as a toolkit for analyses of arbitrary contents (such as files and text messages) on blockchain-based systems and as the base for the results in the paper __[soon to be added]__.
 
 ## Requirements
 
@@ -24,7 +24,7 @@ pip3 install -r requirements.txt
 
 ### 🕵️‍♂️ Run Analyzer
 
-Running this script will scan the Bitcoin or Ethereum blockchain via BigQuery for arbitrary content and store the results in the SQLite database (`results.db`). The analyzer has three modes and will accordingly either scan for files of [popular type](./analysis/files/file-signatures.json) or embedded UTF-8 text strings. The third mode (`url`) exhaustively scans Ethereum transactions for HTTP and IPFS URLs. Exhaustive means it will also find the URL inside a smart contract deployment or call. This mode does not exist for Bitcoin, because those would already get caught by its text analysis.
+Running this script will scan the Bitcoin or Ethereum blockchain via BigQuery for arbitrary content and store the results in a SQLite database (`results.db`). The analyzer has three modes and will accordingly either scan for files of [popular type](./analysis/files/file-signatures.json) or embedded UTF-8 text strings. The third mode (`url`) exhaustively scans Ethereum transactions for HTTP and IPFS URLs. __Exhaustive__ means it will also find the URLs inside a smart contract deployment or call. This mode does not exist for Bitcoin, because those would already get caught by its text analysis.
 
 ```
 usage: analyze.py [-h] [--limit LIMIT] [--content-types CONTENT_TYPES] {btc,eth} {files,text,url}
