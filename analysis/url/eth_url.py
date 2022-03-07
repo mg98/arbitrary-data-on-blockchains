@@ -118,7 +118,9 @@ class EthURLAnalysis:
 
 				try:
 					if tx['type'] == 'http':
-						url = re.search('((https?:\/\/(?:www\.|(?!www)))|www\.)[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[A-Za-z0-9\.]{2,}(\/[^\s]*)?', data).group(0)
+						url = re.search('((https?:\/\/(?:www\.|(?!www)))|www\.)[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[A-Za-z0-9\.]{2,}.[^{}:\"<>]*', data).group(0)
+						if '/ipfs/' in url: tx['type'] = 'ipfs'
+						if re.match('((https?:\/\/(?:www\.|(?!www)))|www\.)[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.onion(\/[^\s]*)?', data): tx['type'] = 'onion'
 					elif tx['type'] == 'ipfs':
 						url = re.search('ipfs:\/\/[a-zA-Z0-9]{16,}', data).group(0)
 					elif tx['type'] == 'onion':
