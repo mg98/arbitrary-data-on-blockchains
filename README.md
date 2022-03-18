@@ -2,7 +2,7 @@
 
 ## Background
 
-This software was built as a toolkit for analyses of arbitrary contents (such as files and text messages) on blockchain-based systems and as the base for the results in the paper __[soon to be added]__.
+This software was built as a toolkit for analyses of arbitrary contents (such as files and text messages) on blockchain-based systems and as the base for the results presented in the [linked paper](https://arxiv.org/abs/2203.09379).
 
 ## Requirements
 
