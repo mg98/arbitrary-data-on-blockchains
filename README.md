@@ -1,8 +1,10 @@
 # Analyzer for Arbitrary Content on Bitcoin and Ethereum
 
+[![DOI](https://img.shields.io/badge/DOI-10.1145%2F3487553.3524628-blue)](https://doi.org/10.1145/3487553.3524628)
+
 ## Background
 
-This software was built as a toolkit for analyses of arbitrary contents (such as files and text messages) on blockchain-based systems and as the base for the results presented in the [linked paper](https://arxiv.org/abs/2203.09379).
+This software was built as a toolkit for analyses of arbitrary contents (such as files and text messages) on blockchain-based systems and as the base for the results presented in the research article linked above.
 
 ## Requirements
 
